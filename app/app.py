@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import holoviews as hv
+import hvplot.pandas  # noqa: F401  (registers .hvplot on DataFrames, loads the Bokeh backend)
+import numpy as np
 import pandas as pd
 import panel as pn
 
@@ -29,6 +32,7 @@ team_matches = load("team_matches")
 league_tables = load("league_tables")
 season_outcomes = load("season_outcomes")
 country_season = load("country_season")
+standings_2026 = load("standings_2026")
 
 SEASONS = sorted(team_matches["season"].unique())
 CURRENT_SEASON = SEASONS[-1]
@@ -70,22 +74,97 @@ def filter_summary(season: str, team: str, countries: list[str], matchdays: tupl
 filters_md = pn.pane.Markdown(pn.bind(filter_summary, season_w, team_w, country_w, matchday_w))
 
 
-def card(title: str, plan: str) -> pn.Card:
-    return pn.Card(
-        pn.pane.Markdown(f"*Placeholder — {plan}*"), filters_md,
-        title=title, collapsible=False, header_background=PRIMARY, header_color="white",
-        min_height=280,
+# --- Q1: Elo vs points scatter (current season) ------------------------------------
+CURRENT_TABLES = league_tables[league_tables["season"].eq(CURRENT_SEASON)]
+LATEST_MD = int(CURRENT_TABLES["matchday"].max())   # matchdays played so far (4)
+
+
+def q1_data(matchdays: tuple[int, int]) -> pd.DataFrame:
+    """Points and GD won *within* the matchday range, plus Elo and expected points.
+
+    league_tables is cumulative, so points in matchdays a..b =
+    cumulative after b  minus  cumulative after a-1.
+    """
+    start, end = matchdays[0], min(matchdays[1], LATEST_MD)
+    cum = CURRENT_TABLES.set_index(["matchday", "team"])[["points", "goal_diff"]]
+    after_end = cum.loc[end]
+    before = cum.loc[start - 1] if start > 1 else after_end * 0
+    df = (after_end - before).join(
+        standings_2026.set_index("team")[["league_country", "elo", "position"]]).reset_index()
+
+    # "Expected" points = straight line fitted through all 36 teams (least squares).
+    # Fitted before any country filter, so the reference line doesn't move when filtering.
+    slope, intercept = np.polyfit(df["elo"], df["points"], deg=1)
+    df["expected"] = intercept + slope * df["elo"]
+    df["vs_expected"] = (df["points"] - df["expected"]).round(1)  # + = over-performing
+    df["elo"] = df["elo"].round(0)
+    return df
+
+
+# Dimension labels make axis titles and hover tooltips readable.
+Q1_DIMS = dict(
+    kdims=[hv.Dimension("elo", label="Elo rating (pts)"), hv.Dimension("points", label="Points")],
+    vdims=[hv.Dimension("team", label="Team"), hv.Dimension("league_country", label="Country"),
+           hv.Dimension("goal_diff", label="Goal difference"),
+           hv.Dimension("vs_expected", label="Points vs expected"),
+           hv.Dimension("position", label="Table position")],
+)
+
+
+def q1_scatter(team: str, countries: list[str], matchdays: tuple[int, int]):
+    if matchdays[0] > LATEST_MD:
+        return pn.pane.Markdown(f"Only matchdays 1–{LATEST_MD} of {CURRENT_SEASON} have been played. "
+                                "Move the matchday slider down.")
+    df = q1_data(matchdays)
+    line = df.sort_values("elo")
+    shown = df[df["league_country"].isin(countries)] if countries else df
+    others, selected = shown[shown["team"] != team], df[df["team"] == team]
+
+    # Label only what matters, to avoid 36 overlapping names: the selected team
+    # plus the 4 biggest over- and under-performers.
+    notable = pd.concat([shown.nlargest(4, "vs_expected"), shown.nsmallest(4, "vs_expected"), selected])
+
+    expected_line = hv.Curve(line, "elo", "expected", label="Expected from Elo").opts(
+        color=PRIMARY, line_dash="dashed", line_width=1.5)
+    grey_points = hv.Points(others, **Q1_DIMS).opts(color=GREY, size=9, line_color="white", tools=["hover"])
+    accent_point = hv.Points(selected, **Q1_DIMS).opts(color=ACCENT, size=15, line_color="black", tools=["hover"])
+    labels = hv.Labels(notable, ["elo", "points"], "team").opts(
+        text_font_size="8pt", yoffset=0.45, text_color="#444")
+
+    md_text = f"MD {matchdays[0]}–{min(matchdays[1], LATEST_MD)}"
+    return (expected_line * grey_points * accent_point * labels).opts(
+        title=f"Who beats their Elo? Points vs Elo rating, {CURRENT_SEASON} ({md_text})",
+        xlabel="Elo rating (pts)", ylabel=f"Points won ({md_text})",
+        responsive=True, height=420, show_legend=True, legend_position="top_left",
     )
 
 
-q1 = card("Q1 · Contenders: who is over- or under-performing their Elo?",
-          "scatter of Elo vs points with the selected team highlighted.")
+def card(title: str, *content) -> pn.Card:
+    return pn.Card(
+        *content, title=title, collapsible=False,
+        header_background=PRIMARY, header_color="white", min_height=280,
+    )
+
+
+def placeholder(plan: str) -> tuple:
+    return pn.pane.Markdown(f"*Placeholder — {plan}*"), filters_md
+
+
+q1 = card(
+    "Q1 · Contenders: who is over- or under-performing their Elo?",
+    # pn.panel (not pn.pane.HoloViews) because q1_scatter may return a plot OR a message.
+    pn.panel(pn.bind(q1_scatter, team_w, country_w, matchday_w)),
+    pn.pane.Markdown(
+        f"Always the current season ({CURRENT_SEASON}). Dashed line = points expected from "
+        "Elo (straight-line fit through all 36 teams). **Above the line = over-performing.**",
+        styles={"font-size": "0.85em", "color": "#666"}),
+)
 q2 = card("Q2 · Early form: does position after matchday 4 predict a deep run?",
-          "bump chart of rank by matchday + MD4 position vs furthest round (2024-26).")
+          *placeholder("bump chart of rank by matchday + MD4 position vs furthest round (2024-26)."))
 q3 = card("Q3 · Strength by country: which leagues send the strongest clubs?",
-          "heatmap of country × season (points per match / Elo).")
+          *placeholder("heatmap of country × season (points per match / Elo)."))
 q4 = card("Q4 · Title probability: who is most likely to win? (model, not a forecast)",
-          "Monte Carlo simulation of the remaining matches.")
+          *placeholder("Monte Carlo simulation of the remaining matches."))
 
 # --- Layout ---------------------------------------------------------------------
 footer = pn.pane.Markdown(

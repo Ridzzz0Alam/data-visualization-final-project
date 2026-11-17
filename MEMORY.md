@@ -13,8 +13,9 @@ Read this together with `CLAUDE.md` at the start of every session. Update it at 
 | 3b `src/team_names.py` | ✅ Done: 125 spellings → 80 clubs, 28 countries; checks via `python src/team_names.py` |
 | 3c `src/prepare.py` (+ `src/elo.py`) | ✅ Done: 7 parquet files in `data/processed/` (see below) |
 | 4 Notebook `01_data_preparation.ipynb` | ✅ Done: 10 steps + missing-values table + decision log; executes clean, writes identical Parquet |
-| 5 Dashboard skeleton `app/app.py` | ✅ Built (FastListTemplate, 4 filters, Q1–Q4 placeholder cards, sources footer); awaiting student's visual check, then commit |
-| 6 Views (6a–6f) | ⏭ **Next** |
+| 5 Dashboard skeleton `app/app.py` | ✅ Done (FastListTemplate, 4 filters, Q1–Q4 cards, sources footer) |
+| 6a Q1 scatter Elo vs points | ✅ Done: expected line = least-squares fit on all 36 teams; labels = selected + 4 most over/under; always current season |
+| 6b–6f Views | ⏭ **Next: 6b bump chart** |
 
 **Processed files** (`python src/prepare.py`): matches (897 = 753 + 144 incl. 72 unplayed), team_matches (long, 1650), elo_history (1650), league_tables (cumulative per matchday, 36-team seasons), season_outcomes (furthest round + reached_* flags, position_md4/final), standings_2026 (+ elo, elo_rank, rank_gap), country_season (Q3).
 - Elo: start 1500, K=20, home advantage 50 (not in final), shoot-out = draw. Current top: Bayern, PSG, Arsenal, Real Madrid.
