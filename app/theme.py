@@ -65,11 +65,10 @@ CHART_OPTS = dict(hooks=[dark_style], toolbar="above", responsive=True)
 # because Panel renders each component inside its own shadow DOM.
 PAGE_CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
-body, #main, .main {{ background: radial-gradient(1200px 600px at 10% -10%, #14204a 0%, {PAGE_BG} 60%) fixed !important; }}
+body, #main, .main {{ background: {PAGE_BG} !important; }}
 body {{ font-family: {FONT}; color: {TEXT}; }}
-#header {{ background: linear-gradient(90deg, #0a1236, #13235e 60%, #0a1236) !important;
-          border-bottom: 1px solid {CARD_BORDER}; }}
-.app-header .title {{ font-weight: 800 !important; letter-spacing: .5px; }}
+#header {{ background: #0a1236 !important; border-bottom: 1px solid {CARD_BORDER}; }}
+.app-header .title {{ font-weight: 600 !important; letter-spacing: .2px; }}
 """
 
 TABS_CSS = f"""
@@ -84,27 +83,24 @@ TABS_CSS = f"""
 """
 
 CARD_CSS = f"""
-:host {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: 16px;
-        padding: 14px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.35); }}
+:host {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: 8px;
+        padding: 14px 16px; }}
 """
 
 HTML_CSS = f"""
 :host {{ font-family: {FONT}; color: {TEXT}; }}
-.hero h1 {{ font-size: 34px; font-weight: 800; margin: 4px 0 2px; letter-spacing: -.5px;
-           background: linear-gradient(90deg, #fff, {ACCENT}); -webkit-background-clip: text;
-           -webkit-text-fill-color: transparent; }}
+.hero h1 {{ font-size: 30px; font-weight: 700; margin: 4px 0 2px; letter-spacing: -.3px;
+           color: {TEXT}; }}
 .hero p {{ color: {MUTED}; margin: 0; font-size: 15px; }}
 .tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }}
-.tile {{ background: linear-gradient(160deg, #13204a, {CARD_BG}); border: 1px solid {CARD_BORDER};
-        border-radius: 16px; padding: 14px 16px; position: relative; overflow: hidden; }}
-.tile::after {{ content: ""; position: absolute; right: -30px; top: -30px; width: 90px; height: 90px;
-               border-radius: 50%; background: radial-gradient({ACCENT}33, transparent 70%); }}
-.tile .label {{ color: {MUTED}; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }}
-.tile .value {{ font-size: 30px; font-weight: 800; color: {TEXT}; line-height: 1.15; margin-top: 4px; }}
-.tile .sub {{ color: {ACCENT}; font-weight: 600; font-size: 14px; }}
-.takeaway {{ border-left: 4px solid {ACCENT}; background: #0f1a3d; padding: 12px 16px;
-            border-radius: 0 12px 12px 0; font-size: 16px; }}
-.takeaway b {{ color: {ACCENT}; }}
+.tile {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER};
+        border-radius: 8px; padding: 12px 14px; }}
+.tile .label {{ color: {MUTED}; font-size: 12px; letter-spacing: .3px; }}
+.tile .value {{ font-size: 26px; font-weight: 600; color: {TEXT}; line-height: 1.2; margin-top: 4px; }}
+.tile .sub {{ color: {TEXT}; opacity: .75; font-weight: 400; font-size: 13px; }}
+.takeaway {{ border-left: 3px solid {ACCENT}; background: transparent; padding: 6px 14px;
+            font-size: 15px; }}
+.takeaway b {{ color: {TEXT}; font-weight: 600; }}
 .muted {{ color: {MUTED}; font-size: 13px; }}
 .focus h2 {{ margin: 0; font-size: 28px; font-weight: 800; }}
 .focus .country {{ color: {MUTED}; }}
@@ -131,7 +127,8 @@ HTML_CSS = f"""
 """
 
 BUTTON_CSS = f"""
-:host(.solid) .bk-btn, .bk-btn {{ font-family: {FONT}; font-weight: 600; border-radius: 12px;
+:host(.solid) .bk-btn, .bk-btn {{ font-family: {FONT}; font-weight: 500; border-radius: 6px;
     background: #13204a; color: {TEXT}; border: 1px solid {CARD_BORDER}; padding: 10px 14px; }}
 .bk-btn:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
 """
+

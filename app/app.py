@@ -357,7 +357,7 @@ tabs[0] = ("Overview", pn.Column(
             card(html('<b>Explore the questions</b>'),
                  go_to(1, "Q1 · Who beats their rating? →"), go_to(2, "Q2 · Does early form matter? →"),
                  go_to(3, "Q3 · Which leagues rule? →"), go_to(4, "Q4 · Who will win? →"),
-                 go_to(5, "⚔ Head-to-head →")),
+                 go_to(5, "Head-to-head →")),
             width=380),
     ),
 ))
