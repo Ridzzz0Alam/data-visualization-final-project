@@ -139,6 +139,52 @@ def q1_scatter(team: str, countries: list[str], matchdays: tuple[int, int]):
     )
 
 
+# --- Q2 (and Q1): bump chart — table position after every matchday --------------------
+LEAGUE_SEASONS = sorted(league_tables["season"].unique())   # 36-team format only
+
+
+def q2_bump(season: str, team: str, countries: list[str], matchdays: tuple[int, int]):
+    if season not in LEAGUE_SEASONS:
+        return pn.pane.Markdown(
+            f"**{season}** used the old group format (no 36-team table). "
+            f"Pick one of: {', '.join(LEAGUE_SEASONS)}.")
+    df = league_tables[league_tables["season"].eq(season)
+                       & league_tables["matchday"].between(*matchdays)]
+    if df.empty:
+        return pn.pane.Markdown(f"No matchdays in range {matchdays[0]}–{matchdays[1]} for {season}.")
+
+    shown = df[df["league_country"].isin(countries)] if countries else df
+    others, selected = shown[shown["team"] != team], df[df["team"] == team]
+    hover = ["team", "points", "goal_diff"]
+
+    # One grey line per team; `by="team"` draws 36 separate lines in one call.
+    grey = others.hvplot.line(x="matchday", y="position", by="team", color=GREY,
+                              line_width=1.5, alpha=0.7, hover_cols=hover, legend=False)
+    plot = grey
+    if not selected.empty:  # the selected team may not have played this season
+        plot = plot * selected.hvplot.line(x="matchday", y="position", color=ACCENT,
+                                           line_width=4, hover_cols=hover)
+        plot = plot * selected.hvplot.scatter(x="matchday", y="position", color=ACCENT,
+                                              size=60, hover_cols=hover)
+
+    # Qualification cut-offs: top 8 -> Round of 16, 9-24 -> knockout play-offs, 25+ out.
+    cutoffs = (hv.HLine(8.5) * hv.HLine(24.5)).opts(
+        hv.opts.HLine(color=PRIMARY, line_dash="dashed", line_width=1))
+    zone_labels = hv.Labels({"x": [matchdays[0]] * 3, "y": [4.5, 16.5, 30.5],
+                             "text": ["Top 8 → R16", "9–24 → play-offs", "25+ → out"]},
+                            ["x", "y"], "text").opts(
+        text_font_size="8pt", text_color=PRIMARY, text_align="left", text_alpha=0.6)
+
+    note = "" if not selected.empty else f" ({team} did not play)"
+    return (plot * cutoffs * zone_labels).opts(
+        title=f"How did {team}'s table position change? {season}{note}",
+        xlabel="League matchday", ylabel="Table position (1 = top)",
+        invert_yaxis=True, xticks=list(range(matchdays[0], matchdays[1] + 1)),
+        yticks=[1, 8, 16, 24, 36], ylim=(0, 37),
+        responsive=True, height=420, show_legend=False,
+    )
+
+
 def card(title: str, *content) -> pn.Card:
     return pn.Card(
         *content, title=title, collapsible=False,
@@ -159,8 +205,11 @@ q1 = card(
         "Elo (straight-line fit through all 36 teams). **Above the line = over-performing.**",
         styles={"font-size": "0.85em", "color": "#666"}),
 )
-q2 = card("Q2 · Early form: does position after matchday 4 predict a deep run?",
-          *placeholder("bump chart of rank by matchday + MD4 position vs furthest round (2024-26)."))
+q2 = card(
+    "Q2 · Early form: does position after matchday 4 predict a deep run?",
+    pn.panel(pn.bind(q2_bump, season_w, team_w, country_w, matchday_w)),
+    *placeholder("MD4 position vs furthest round reached (2024-26) — Phase 6c."),
+)
 q3 = card("Q3 · Strength by country: which leagues send the strongest clubs?",
           *placeholder("heatmap of country × season (points per match / Elo)."))
 q4 = card("Q4 · Title probability: who is most likely to win? (model, not a forecast)",
