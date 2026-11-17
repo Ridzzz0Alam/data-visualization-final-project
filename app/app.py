@@ -75,6 +75,25 @@ def filter_summary(season: str, team: str, countries: list[str], matchdays: tupl
 filters_md = pn.pane.Markdown(pn.bind(filter_summary, season_w, team_w, country_w, matchday_w))
 
 
+# --- Linked views: clicking a dot selects that team everywhere ---------------------------
+def click_selects_team(points: hv.Element, data: pd.DataFrame) -> hv.Element:
+    """Make the dots clickable: a click sets the sidebar team selector.
+
+    Selection1D reports the *row index* of the clicked dot; `data` is the
+    DataFrame the dots were drawn from, so data.iloc[index] is that team.
+    Every view is bound to team_w, so all of them update (= linked views).
+    """
+    stream = hv.streams.Selection1D(source=points)
+
+    def on_click(index: list[int]) -> None:
+        if index:
+            team_w.value = data["team"].iloc[index[0]]
+
+    stream.add_subscriber(on_click)
+    # Tap tool = click to select; nonselection_alpha=1 stops Bokeh fading the other dots.
+    return points.opts(tools=["tap", "hover"], nonselection_alpha=1.0)
+
+
 # --- Q1: Elo vs points scatter (current season) ------------------------------------
 CURRENT_TABLES = league_tables[league_tables["season"].eq(CURRENT_SEASON)]
 LATEST_MD = int(CURRENT_TABLES["matchday"].max())   # matchdays played so far (4)
@@ -127,7 +146,8 @@ def q1_scatter(team: str, countries: list[str], matchdays: tuple[int, int]):
 
     expected_line = hv.Curve(line, "elo", "expected", label="Expected from Elo").opts(
         color=PRIMARY, line_dash="dashed", line_width=1.5)
-    grey_points = hv.Points(others, **Q1_DIMS).opts(color=GREY, size=9, line_color="white", tools=["hover"])
+    grey_points = click_selects_team(
+        hv.Points(others, **Q1_DIMS).opts(color=GREY, size=9, line_color="white"), others)
     accent_point = hv.Points(selected, **Q1_DIMS).opts(color=ACCENT, size=15, line_color="black", tools=["hover"])
     labels = hv.Labels(notable, ["elo", "points"], "team").opts(
         text_font_size="8pt", yoffset=0.45, text_color="#444")
@@ -223,8 +243,9 @@ def q2_strip(team: str, countries: list[str]):
     layers = []
     for season, marker in Q2_MARKERS.items():
         s = shown[shown["season"].eq(season) & shown["team"].ne(team)]
-        layers.append(s.hvplot.scatter(x="position_md4", y="y", color=GREY, marker=marker,
-                                       size=70, hover_cols=hover, label=season, **tips))
+        layers.append(click_selects_team(
+            s.hvplot.scatter(x="position_md4", y="y", color=GREY, marker=marker,
+                             size=70, hover_cols=hover, label=season, **tips), s))
     for season, marker in Q2_MARKERS.items():   # selected team drawn last = on top
         s = df[df["season"].eq(season) & df["team"].eq(team)]
         if not s.empty:
@@ -363,14 +384,15 @@ q1 = card(
     pn.panel(pn.bind(q1_scatter, team_w, country_w, matchday_w)),
     pn.pane.Markdown(
         f"Always the current season ({CURRENT_SEASON}). Dashed line = points expected from "
-        "Elo (straight-line fit through all 36 teams). **Above the line = over-performing.**",
+        "Elo (straight-line fit through all 36 teams). **Above the line = over-performing.** "
+        "**Click a dot** to select that team in every view.",
         styles={"font-size": "0.85em", "color": "#666"}),
 )
 q2 = card(
     "Q2 · Early form: does position after matchday 4 predict a deep run?",
     pn.panel(pn.bind(q2_bump, season_w, team_w, country_w, matchday_w)),
     pn.panel(pn.bind(q2_strip, team_w, country_w)),
-    pn.pane.Markdown(q2_summary() + ". Uses the two completed 36-team seasons; the season "
+    pn.pane.Markdown(q2_summary() + ". Click a dot to select that team. Uses the two completed 36-team seasons; the season "
                      "and matchday filters do not apply to this chart.",
                      styles={"font-size": "0.85em", "color": "#666"}),
 )
