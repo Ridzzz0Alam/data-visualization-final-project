@@ -4,7 +4,7 @@ Panel dashboard. Run from the project root:
     panel serve app/app.py --show --autoreload
 
 Reads ONLY data/processed/*.parquet (built by src/prepare.py).
-Phase 5 = skeleton: sidebar filters + four placeholder cards (one per question).
+Layout: sidebar filters, one card per analytical question (Q1-Q4), a match table.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ season_outcomes = load("season_outcomes")
 country_season = load("country_season")
 standings_2026 = load("standings_2026")
 matches = load("matches")
+simulation = load("simulation_2026")   # src/simulate.py (Monte Carlo, Q4)
 
 SEASONS = sorted(team_matches["season"].unique())
 CURRENT_SEASON = SEASONS[-1]
@@ -60,19 +61,6 @@ country_w = pn.widgets.MultiChoice(name="Country (empty = all)", options=COUNTRI
 matchday_w = pn.widgets.IntRangeSlider(
     name="League matchdays", start=1, end=MAX_MATCHDAY, value=(1, MAX_MATCHDAY), step=1,
 )
-
-
-# --- Placeholder content (replaced by real charts in Phase 6) ---------------------
-def filter_summary(season: str, team: str, countries: list[str], matchdays: tuple[int, int]) -> str:
-    """Echo the current filters so we can see every widget is wired up."""
-    in_season = team in set(team_matches.loc[team_matches["season"].eq(season), "team"])
-    note = "" if in_season else f"  \n⚠️ {team} did not play in {season}."
-    return (f"**Season** {season} · **Team** {team} · "
-            f"**Countries** {', '.join(countries) or 'all'} · "
-            f"**Matchdays** {matchdays[0]}–{matchdays[1]}{note}")
-
-
-filters_md = pn.pane.Markdown(pn.bind(filter_summary, season_w, team_w, country_w, matchday_w))
 
 
 # --- Linked views: clicking a dot selects that team everywhere ---------------------------
@@ -315,6 +303,41 @@ def q3_heatmap(metric_label: str, team: str, countries: list[str]):
     )
 
 
+# --- Q4: Monte Carlo title probability (model output from src/simulate.py) ---------------
+Q4_STAGES = {   # label -> column with the probability of reaching that stage
+    "Win the title": "p_win", "Reach the final": "p_final", "Reach the semi-finals": "p_sf",
+    "Reach the quarter-finals": "p_qf", "Reach the Round of 16": "p_r16",
+    "Finish in the top 8": "p_top8", "Reach the knockouts (top 24)": "p_knockouts",
+}
+Q4_TOP_N = 16
+q4_stage_w = pn.widgets.Select(name="Probability to…", options=list(Q4_STAGES), value="Win the title",
+                               width=260, sizing_mode="fixed")
+
+# Probabilities as percentages (0-100): p_win -> pct_win etc.
+q4_data = simulation.assign(**{col.replace("p_", "pct_"): (simulation[col] * 100).round(1)
+                               for col in Q4_STAGES.values()})
+# Explicit hover: every stage's probability for the hovered team.
+Q4_TOOLTIPS = [("Team", "@team"), ("Points now", "@points")] + [
+    (label, f"@{col.replace('p_', 'pct_')}{{0.0}}%") for label, col in Q4_STAGES.items()]
+
+
+def q4_bars(stage: str, team: str, countries: list[str]):
+    df = q4_data[q4_data["league_country"].isin(countries)] if countries else q4_data
+    # The top N teams for this stage, plus the selected team even if it is further down.
+    col = Q4_STAGES[stage].replace("p_", "pct_")
+    df = pd.concat([df.nlargest(Q4_TOP_N, col), q4_data[q4_data["team"].eq(team)]])         .drop_duplicates("team").sort_values(col)            # ascending: highest bar on top
+    df["colour"] = np.where(df["team"].eq(team), ACCENT, GREY)
+    return df.hvplot.barh(
+        x="team", y=col, color="colour", line_color=None,
+        hover_cols=["points", *[c.replace("p_", "pct_") for c in Q4_STAGES.values()]],
+        hover_tooltips=Q4_TOOLTIPS,
+    ).opts(
+        title=f"Who is most likely to {stage[0].lower() + stage[1:]}? (% of 10,000 simulated seasons)",
+        xlabel="", ylabel="Probability (%)", responsive=True, height=max(320, 24 * len(df) + 90),
+        toolbar="above",
+    )
+
+
 # --- Match explorer: searchable table (all views' raw data) -------------------------------
 def _score(m) -> str:
     """'2–1', '1–1 a.e.t. (4–3 pens)', or 'scheduled' for unplayed matches."""
@@ -374,9 +397,6 @@ def card(title: str, *content) -> pn.Card:
     )
 
 
-def placeholder(plan: str) -> tuple:
-    return pn.pane.Markdown(f"*Placeholder — {plan}*"), filters_md
-
 
 q1 = card(
     "Q1 · Contenders: who is over- or under-performing their Elo?",
@@ -406,8 +426,19 @@ q3 = card(
         "change this. **Red numbers** = seasons the selected team played. Monaco counts as France.",
         styles={"font-size": "0.85em", "color": "#666"}),
 )
-q4 = card("Q4 · Title probability: who is most likely to win? (model, not a forecast)",
-          *placeholder("Monte Carlo simulation of the remaining matches."))
+q4 = card(
+    "Q4 · Title probability: who is most likely to win? (model, not a forecast)",
+    q4_stage_w,
+    pn.panel(pn.bind(q4_bars, q4_stage_w, team_w, country_w)),
+    pn.pane.Markdown(
+        "**Model assumptions** (`src/simulate.py`): the remaining 72 league matches and a "
+        "simplified fixed knockout bracket are played 10,000 times. Win/draw/loss odds come from "
+        "current Elo ratings (home +50), with the historical UCL draw rate "
+        f"({simulation.attrs.get('draw_rate', 0.165):.1%}); ratings stay frozen; league ties are "
+        "broken by current goal difference; the real UCL draw is partly random. "
+        "It shows what the Elo ratings imply — not a prediction.",
+        styles={"font-size": "0.85em", "color": "#666"}),
+)
 
 explorer = card(
     "Match explorer · every UCL match 2021-22 → 2026-27 (search with the boxes under each header)",

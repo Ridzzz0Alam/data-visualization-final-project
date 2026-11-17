@@ -20,7 +20,8 @@ Read this together with `CLAUDE.md` at the start of every session. Update it at 
 | 6d Q3 heatmap country × season | ✅ Done. Metric toggle (pts/match, mean Elo, win rate, clubs in R16); default rows = 8 countries with ≥50 matches; selected team's cells in red |
 | 6e Match explorer (Tabulator) | ✅ Done. Full-width card; follows team selector, 'show all teams' checkbox, header filters per column |
 | 6f Linking | ✅ Done. `click_selects_team()` = Selection1D + tap on Q1 scatter and Q2 strip dots → sets team_w → all views update |
-| 7 Monte Carlo `src/simulate.py` + Q4 card | ⏭ **Next** |
+| 7 Monte Carlo `src/simulate.py` + Q4 card | ✅ Done. 10k sims, seed 2027, draw rate 16.5% from data, frozen Elo, fixed bracket (seed k v winner of (17-k) v (16+k)); writes `simulation_2026.parquet` — run AFTER prepare.py. Top: PSG 15.9%, Bayern 14.9%, Real 14.0%, Arsenal 13.6% |
+| 8 Polish, README, defense notes | ⏭ **Next** |
 
 **Processed files** (`python src/prepare.py`): matches (897 = 753 + 144 incl. 72 unplayed), team_matches (long, 1650), elo_history (1650), league_tables (cumulative per matchday, 36-team seasons), season_outcomes (furthest round + reached_* flags, position_md4/final), standings_2026 (+ elo, elo_rank, rank_gap), country_season (Q3).
 - Elo: start 1500, K=20, home advantage 50 (not in final), shoot-out = draw. Current top: Bayern, PSG, Arsenal, Real Madrid.
