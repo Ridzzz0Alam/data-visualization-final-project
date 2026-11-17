@@ -33,6 +33,7 @@ league_tables = load("league_tables")
 season_outcomes = load("season_outcomes")
 country_season = load("country_season")
 standings_2026 = load("standings_2026")
+matches = load("matches")
 
 SEASONS = sorted(team_matches["season"].unique())
 CURRENT_SEASON = SEASONS[-1]
@@ -293,6 +294,58 @@ def q3_heatmap(metric_label: str, team: str, countries: list[str]):
     )
 
 
+# --- Match explorer: searchable table (all views' raw data) -------------------------------
+def _score(m) -> str:
+    """'2–1', '1–1 a.e.t. (4–3 pens)', or 'scheduled' for unplayed matches."""
+    if not m.played:
+        return "scheduled"
+    s = f"{m.home_goals}–{m.away_goals}"
+    if m.extra_time:
+        s += " a.e.t."
+    if pd.notna(m.home_pens):
+        s += f" ({m.home_pens}–{m.away_pens} pens)"
+    return s
+
+
+# Built once: a readable version of `matches` for display.
+match_table = pd.DataFrame({
+    "Date": matches["date"].dt.date,
+    "Season": matches["season"],
+    "Round": matches["round"],
+    "Home": matches["home_team"],
+    "Score": [_score(m) for m in matches.itertuples()],
+    "Away": matches["away_team"],
+    "Home country": matches["home_country"],
+    "Away country": matches["away_country"],
+}).sort_values("Date", ascending=False).reset_index(drop=True)
+
+all_teams_w = pn.widgets.Checkbox(name="Show all teams (not only the selected one)", value=False)
+
+
+def match_rows(team: str, all_teams: bool) -> pd.DataFrame:
+    if all_teams:
+        return match_table
+    return match_table[match_table["Home"].eq(team) | match_table["Away"].eq(team)]
+
+
+# Header filters: a search box per column; dropdowns where there are few values.
+match_tabulator = pn.widgets.Tabulator(
+    pn.bind(match_rows, team_w, all_teams_w),   # value updates when the team changes
+    show_index=False, disabled=True, pagination="local", page_size=12,
+    layout="fit_data_stretch", sizing_mode="stretch_width",
+    header_filters={
+        "Date": {"type": "input", "func": "like", "placeholder": "e.g. 2026-10"},
+        "Season": {"type": "list", "valuesLookup": True, "clearable": True},
+        "Round": {"type": "list", "valuesLookup": True, "clearable": True},
+        "Home": {"type": "input", "func": "like", "placeholder": "search"},
+        "Score": {"type": "input", "func": "like", "placeholder": "e.g. pens"},
+        "Away": {"type": "input", "func": "like", "placeholder": "search"},
+        "Home country": {"type": "list", "valuesLookup": True, "clearable": True},
+        "Away country": {"type": "list", "valuesLookup": True, "clearable": True},
+    },
+)
+
+
 def card(title: str, *content) -> pn.Card:
     return pn.Card(
         *content, title=title, collapsible=False,
@@ -334,6 +387,11 @@ q3 = card(
 q4 = card("Q4 · Title probability: who is most likely to win? (model, not a forecast)",
           *placeholder("Monte Carlo simulation of the remaining matches."))
 
+explorer = card(
+    "Match explorer · every UCL match 2021-22 → 2026-27 (search with the boxes under each header)",
+    all_teams_w, match_tabulator,
+)
+
 # --- Layout ---------------------------------------------------------------------
 footer = pn.pane.Markdown(
     "Data: [openfootball/champions-league](https://github.com/openfootball/champions-league) "
@@ -346,7 +404,7 @@ footer = pn.pane.Markdown(
 template = pn.template.FastListTemplate(
     title="UEFA Champions League 2026/27 — who are the real contenders?",
     sidebar=[season_w, team_w, country_w, matchday_w],
-    main=[pn.Row(q1, q2), pn.Row(q3, q4), footer],
+    main=[pn.Row(q1, q2), pn.Row(q3, q4), explorer, footer],
     accent=PRIMARY,
     header_background=PRIMARY,
 )
