@@ -375,6 +375,9 @@ template = pn.template.FastListTemplate(
                                 'line-height:40px">FOCUS TEAM</span>', width=90),
                    team_w, width=350, align="center")],
     main=[tabs, footer], main_layout=None, theme="dark",
+    # The design is dark-only (all colours in theme.py), so hide the template's light/dark
+    # switch, and hide its header spinner that flickers on every recalculation.
+    theme_toggle=False, busy_indicator=None,
     accent=ACCENT, header_background="#0a1236", background_color="#060a18",
 )
 template.servable()
