@@ -2,7 +2,7 @@
 
 Read this together with `CLAUDE.md` at the start of every session. Update it at the end of each phase.
 
-## Status (last updated 2026-11-16)
+## Status (last updated 2026-11-17)
 
 | Phase | Status |
 |---|---|
@@ -12,7 +12,8 @@ Read this together with `CLAUDE.md` at the start of every session. Update it at 
 | 3a Parser `src/parse_openfootball.py` | ✅ Done: 753 matches, 5 seasons, counts match headers |
 | 3b `src/team_names.py` | ✅ Done: 125 spellings → 80 clubs, 28 countries; checks via `python src/team_names.py` |
 | 3c `src/prepare.py` (+ `src/elo.py`) | ✅ Done: 7 parquet files in `data/processed/` (see below) |
-| 4 Notebook `01_data_preparation.ipynb` | ⏭ **Next** |
+| 4 Notebook `01_data_preparation.ipynb` | ✅ Done: 10 steps + missing-values table + decision log; executes clean, writes identical Parquet |
+| 5 Dashboard skeleton `app/app.py` | ⏭ **Next** |
 
 **Processed files** (`python src/prepare.py`): matches (897 = 753 + 144 incl. 72 unplayed), team_matches (long, 1650), elo_history (1650), league_tables (cumulative per matchday, 36-team seasons), season_outcomes (furthest round + reached_* flags, position_md4/final), standings_2026 (+ elo, elo_rank, rank_gap), country_season (Q3).
 - Elo: start 1500, K=20, home advantage 50 (not in final), shoot-out = draw. Current top: Bayern, PSG, Arsenal, Real Madrid.
@@ -20,10 +21,13 @@ Read this together with `CLAUDE.md` at the start of every session. Update it at 
 - Verified: 2024-25 final table and all 5 champions correct; 2026 MD4 table identical to API.
 - Smart App Control blocked pyarrow's DLL; the user allowed it (2026-11-16). If Parquet errors return, that's the cause.
 
+Note: 97 *distinct* raw spellings (the "125" above counts names in both sources twice).
+Q2 preview (2024-26, MD4 position → reached R16): top-8 75%, 9–24 56%, 25–36 8%.
+
 Name decisions: short canonical names for chart labels (e.g. "PSG", "Man City", "Bayern Munich"). Country = football-data spelling ("England"); `league_country()` maps Monaco → France for Q3 (AS Monaco plays in Ligue 1).
 
 **Python on this PC:** `python` is the Windows Store stub and hangs. Use `C:\Users\ridz\AppData\Local\Python\bin\python.exe` (add `-X utf8`).
-| 4–8 Notebook, dashboard, simulation, polish | To do |
+| 5–8 Dashboard, simulation, polish | To do |
 
 ## Decisions made (and why)
 
