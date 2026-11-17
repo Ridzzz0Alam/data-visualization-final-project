@@ -16,7 +16,8 @@ Read this together with `CLAUDE.md` at the start of every session. Update it at 
 | 5 Dashboard skeleton `app/app.py` | ✅ Done (FastListTemplate, 4 filters, Q1–Q4 cards, sources footer) |
 | 6a Q1 scatter Elo vs points | ✅ Done: expected line = least-squares fit on all 36 teams; labels = selected + 4 most over/under; always current season |
 | 6b Bump chart (Q2 card) | ✅ Done: league seasons only (message for 2021-24), cut-off lines at 8.5/24.5; NB ylim=(0,37)+invert_yaxis (ylim reversed + invert = double flip) |
-| 6c–6f Views | ⏭ **Next: 6c MD4 vs furthest round** |
+| 6c Q2 strip plot MD4 position vs furthest round | ✅ Done. 2024-26 only (72 teams); summary line: top-8 75% R16 / 31% SF |
+| 6d–6f Views | ⏭ **Next: 6d country × season heatmap** |
 
 **Processed files** (`python src/prepare.py`): matches (897 = 753 + 144 incl. 72 unplayed), team_matches (long, 1650), elo_history (1650), league_tables (cumulative per matchday, 36-team seasons), season_outcomes (furthest round + reached_* flags, position_md4/final), standings_2026 (+ elo, elo_rank, rank_gap), country_season (Q3).
 - Elo: start 1500, K=20, home advantage 50 (not in final), shoot-out = draw. Current top: Bayern, PSG, Arsenal, Real Madrid.

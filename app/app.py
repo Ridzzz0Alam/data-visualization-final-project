@@ -185,6 +185,64 @@ def q2_bump(season: str, team: str, countries: list[str], matchdays: tuple[int, 
     )
 
 
+# --- Q2: position after matchday 4 vs furthest round reached ----------------------------
+# Only completed seasons in the 36-team format can answer "how far did they get?".
+Q2_SEASONS = [s for s in LEAGUE_SEASONS if s != CURRENT_SEASON]          # 2024-25, 2025-26
+Q2_ROUNDS = ["League phase", "Knockout playoffs", "Round of 16", "Quarterfinals",
+             "Semifinals", "Final", "Winner"]
+Q2_MARKERS = {Q2_SEASONS[0]: "circle", Q2_SEASONS[-1]: "triangle"}
+Q2_OFFSET = {Q2_SEASONS[0]: -0.15, Q2_SEASONS[-1]: 0.15}   # separate the two seasons vertically
+
+q2_outcomes = season_outcomes[season_outcomes["season"].isin(Q2_SEASONS)].copy()
+q2_outcomes["round_idx"] = q2_outcomes["furthest"].astype(str).map(Q2_ROUNDS.index)
+q2_outcomes["y"] = q2_outcomes["round_idx"] + q2_outcomes["season"].map(Q2_OFFSET)
+q2_outcomes["furthest"] = q2_outcomes["furthest"].astype(str)
+q2_outcomes["band"] = pd.cut(q2_outcomes["position_md4"].astype(float), [0, 8, 24, 36],
+                             labels=["1–8", "9–24", "25–36"])
+
+
+def q2_summary() -> str:
+    """Share of teams per MD4 band that reached the Round of 16 / semi-finals."""
+    rates = q2_outcomes.groupby("band", observed=True)[["reached_r16", "reached_sf"]].mean()
+    parts = [f"**{band}**: {r.reached_r16:.0%} reached R16, {r.reached_sf:.0%} the semis"
+             for band, r in rates.iterrows()]
+    return f"After MD4, by position ({' and '.join(Q2_SEASONS)}, all 72 teams) — " + " · ".join(parts)
+
+
+def q2_strip(team: str, countries: list[str]):
+    df = q2_outcomes
+    shown = df[df["league_country"].isin(countries)] if countries else df
+    hover = ["team", "season", "position_md4", "position_final", "furthest"]
+    # Explicit tooltips: hide the internal, vertically shifted "y" value.
+    tips = dict(hover_tooltips=[("Team", "@team"), ("Season", "@season"),
+                                ("Position after MD4", "@position_md4"),
+                                ("Final league position", "@position_final"),
+                                ("Furthest round", "@furthest")])
+
+    layers = []
+    for season, marker in Q2_MARKERS.items():
+        s = shown[shown["season"].eq(season) & shown["team"].ne(team)]
+        layers.append(s.hvplot.scatter(x="position_md4", y="y", color=GREY, marker=marker,
+                                       size=70, hover_cols=hover, label=season, **tips))
+    for season, marker in Q2_MARKERS.items():   # selected team drawn last = on top
+        s = df[df["season"].eq(season) & df["team"].eq(team)]
+        if not s.empty:
+            layers.append(s.hvplot.scatter(x="position_md4", y="y", color=ACCENT, marker=marker,
+                                           size=160, line_color="black", hover_cols=hover, **tips))
+
+    cutoffs = (hv.VLine(8.5) * hv.VLine(24.5)).opts(
+        hv.opts.VLine(color=PRIMARY, line_dash="dashed", line_width=1))
+    played = df.loc[df["team"].eq(team), "season"].tolist()
+    note = f"{team}: {', '.join(played)}" if played else f"{team} played in neither season"
+    return hv.Overlay(layers + [cutoffs]).opts(
+        title=f"Does an early top-8 spot lead to a deep run? ({note})",
+        xlabel="Table position after matchday 4", ylabel="Furthest round reached",
+        yticks=list(enumerate(Q2_ROUNDS)), xticks=[1, 8, 16, 24, 36], xlim=(0, 37),
+        ylim=(-0.6, len(Q2_ROUNDS) - 0.4),
+        responsive=True, height=380, legend_position="bottom_right",
+    )
+
+
 def card(title: str, *content) -> pn.Card:
     return pn.Card(
         *content, title=title, collapsible=False,
@@ -208,7 +266,10 @@ q1 = card(
 q2 = card(
     "Q2 · Early form: does position after matchday 4 predict a deep run?",
     pn.panel(pn.bind(q2_bump, season_w, team_w, country_w, matchday_w)),
-    *placeholder("MD4 position vs furthest round reached (2024-26) — Phase 6c."),
+    pn.panel(pn.bind(q2_strip, team_w, country_w)),
+    pn.pane.Markdown(q2_summary() + ". Uses the two completed 36-team seasons; the season "
+                     "and matchday filters do not apply to this chart.",
+                     styles={"font-size": "0.85em", "color": "#666"}),
 )
 q3 = card("Q3 · Strength by country: which leagues send the strongest clubs?",
           *placeholder("heatmap of country × season (points per match / Elo)."))
