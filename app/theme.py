@@ -8,6 +8,7 @@ Colour rules (same in every view):
 from __future__ import annotations
 
 from bokeh.models import ColorBar
+from bokeh.palettes import interp_palette
 
 # --- Palette ---------------------------------------------------------------------
 PAGE_BG = "#060a18"
@@ -20,7 +21,9 @@ ACCENT = "#22d3ee"      # focus team
 GOLD = "#fbbf24"        # second team (head-to-head) / favourite
 GREY = "#46527a"        # other teams
 REF = "#7c86ad"         # reference lines
-HEAT_CMAP = ["#121a3a", "#1e3a8a", "#2563eb", "#22d3ee", "#cffafe"]
+# Smooth 256-step scale (5 colours alone give hard blocks). It stops at mid-blue, so
+# white numbers stay readable on every cell.
+HEAT_CMAP = list(interp_palette(["#111a3a", "#1e3a8a", "#2563eb", "#3b9be8"], 256))
 FONT = "Outfit, 'Segoe UI', sans-serif"
 
 
@@ -30,6 +33,7 @@ def dark_style(plot, element) -> None:
     fig.background_fill_color = CARD_BG
     fig.border_fill_color = CARD_BG
     fig.outline_line_color = None
+    fig.toolbar.autohide = True      # tools appear only when the mouse is over the chart
     fig.title.text_color = TEXT
     fig.title.text_font = FONT
     fig.title.text_font_size = "14px"
@@ -132,3 +136,11 @@ BUTTON_CSS = f"""
 .bk-btn:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
 """
 
+# Dark text input (the header's focus-team search box defaults to white-on-white).
+SEARCH_CSS = f"""
+input.bk-input {{ background: {CARD_BG}; color: {TEXT}; border: 1px solid {CARD_BORDER};
+                  border-radius: 6px; font-family: {FONT}; font-size: 14px; }}
+input.bk-input:focus {{ border-color: {ACCENT}; }}
+.bk-menu {{ background: {CARD_BG}; color: {TEXT}; border: 1px solid {CARD_BORDER}; }}
+.bk-menu > .bk-active, .bk-menu > *:hover {{ background: #18244d; }}
+"""

@@ -23,7 +23,7 @@ import panel as pn
 import charts as c
 import data as d
 from theme import (ACCENT, BUTTON_CSS, CARD_BG, CARD_BORDER, CARD_CSS, GOLD, HTML_CSS, MUTED,
-                   PAGE_CSS, TABS_CSS, TEXT)
+                   PAGE_CSS, SEARCH_CSS, TABS_CSS, TEXT)
 
 pn.extension("tabulator", sizing_mode="stretch_width", raw_css=[PAGE_CSS])
 
@@ -62,7 +62,7 @@ def fmt_pct(x: float) -> str:
 team_w = pn.widgets.AutocompleteInput(
     name="", placeholder="Search a team…", options=d.TEAMS, value="Arsenal",
     case_sensitive=False, search_strategy="includes", restrict=True, min_characters=1,
-    width=240,
+    width=240, stylesheets=[SEARCH_CSS],
 )
 
 
@@ -237,7 +237,7 @@ odds_tab = pn.Column(
 team_b_w = pn.widgets.AutocompleteInput(
     name="Compare with", placeholder="Search a team…", options=d.TEAMS,
     value=d.simulation.iloc[0]["team"], case_sensitive=False, search_strategy="includes",
-    restrict=True, min_characters=1, width=260)
+    restrict=True, min_characters=1, width=260, stylesheets=[SEARCH_CSS])
 
 
 def meetings(team_a: str, team_b: str) -> pd.DataFrame:

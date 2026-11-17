@@ -51,7 +51,9 @@ def q1_scatter(team, countries, matchdays, on_select):
     df = d.q1_data(matchdays)
     shown = _filter(df, countries)
     others, focus = shown[shown["team"] != team], df[df["team"] == team]
-    notable = pd.concat([shown.nlargest(4, "vs_expected"), shown.nsmallest(4, "vs_expected"), focus])
+    # Only the focus team gets a name label: many teams share the same points, so labelling
+    # more of them overlaps. The ranking chart next to this one names the outliers; hover
+    # shows every team.
 
     line = hv.Curve(df.sort_values("elo"), "elo", "expected", label="Expected from Elo").opts(
         color=REF, line_dash="dashed", line_width=2)
@@ -59,13 +61,13 @@ def q1_scatter(team, countries, matchdays, on_select):
         color=GREY, size=11, line_color="#0e1530", line_width=1.5), others, on_select)
     accent = hv.Points(focus, **Q1_DIMS).opts(color=ACCENT, size=18, line_color="white",
                                               line_width=2, tools=["hover"])
-    labels = hv.Labels(notable, ["elo", "points"], "team").opts(
-        text_font_size="9pt", yoffset=0.5, text_color="#c9d1f0")
+    labels = hv.Labels(focus, ["elo", "points"], "team").opts(
+        text_font_size="10pt", yoffset=0.6, text_color=ACCENT, text_font_style="bold")
     md = f"MD {matchdays[0]}–{min(matchdays[1], d.LATEST_MD)}"
     return (line * grey * accent * labels).opts(
         title=f"Who beats their Elo? Points vs Elo rating ({md})",
         xlabel="Elo rating (rating points)", ylabel=f"Points won ({md})",
-        height=460, show_legend=True, legend_position="top_left", **CHART_OPTS)
+        height=460, show_legend=True, legend_position="top_left", padding=0.06, **CHART_OPTS)
 
 
 def q1_lollipop(team, countries, matchdays):
@@ -76,19 +78,19 @@ def q1_lollipop(team, countries, matchdays):
     df = pd.concat([df.nlargest(8, "vs_expected"), df.nsmallest(8, "vs_expected"),
                     d.q1_data(matchdays).query("team == @team")])
     df = df.drop_duplicates("team").sort_values("vs_expected").reset_index(drop=True)
-    df["y"] = np.arange(len(df))
+    df["row"] = np.arange(len(df))
     df["colour"] = np.where(df["team"].eq(team), ACCENT, np.where(df["vs_expected"] > 0, "#9aa6d1", GREY))
 
-    stems = hv.Segments(df.assign(zero=0), ["zero", "y", "vs_expected", "y"]).opts(
+    stems = hv.Segments(df.assign(zero=0), ["zero", "row", "vs_expected", "row"]).opts(
         color="colour", line_width=3)
-    dots = hv.Points(df, ["vs_expected", "y"], ["team", "points", "colour"]).opts(
+    dots = hv.Points(df, ["vs_expected", "row"], ["team", "points", "colour"]).opts(
         color="colour", size=12, tools=["hover"], line_color=None,
         hover_tooltips=[("Team", "@team"), ("Points", "@points"), ("Vs expected", "@vs_expected")])
     zero = hv.VLine(0).opts(color=REF, line_width=1)
     return (stems * dots * zero).opts(
-        title="Biggest over- and under-performers (points vs Elo expectation)",
+        title="Points above / below Elo expectation",
         xlabel="Points above (+) or below (−) expectation", ylabel="",
-        yticks=list(zip(df["y"], df["team"])), height=460, **CHART_OPTS)
+        yticks=list(zip(df["row"], df["team"])), height=460, **CHART_OPTS)
 
 
 # --- Q2 Early form --------------------------------------------------------------------
@@ -109,9 +111,9 @@ def q2_bump(season, team, matchdays):
         plot = plot * focus.hvplot.scatter(x="matchday", y="position", color=ACCENT, size=90,
                                            responsive=True, **tips)
     cut = (hv.HLine(8.5) * hv.HLine(24.5)).opts(hv.opts.HLine(color=REF, line_dash="dashed"))
-    zones = hv.Labels({"x": [matchdays[0]] * 3, "y": [4.5, 16.5, 30.5],
+    zones = hv.Labels({"matchday": [matchdays[0]] * 3, "position": [4.5, 16.5, 30.5],
                        "text": ["  TOP 8 → R16", "  9–24 → PLAY-OFFS", "  25+ → OUT"]},
-                      ["x", "y"], "text").opts(text_font_size="8pt", text_color=REF,
+                      ["matchday", "position"], "text").opts(text_font_size="8pt", text_color=REF,
                                                text_align="left")
     note = "" if not focus.empty else f" — {team} did not play"
     return (plot * cut * zones).opts(
@@ -125,7 +127,7 @@ def q2_strip(team, on_select):
     df = d.q2_outcomes.copy()
     offset = {d.Q2_SEASONS[0]: -0.15, d.Q2_SEASONS[-1]: 0.15}
     markers = {d.Q2_SEASONS[0]: "circle", d.Q2_SEASONS[-1]: "triangle"}
-    df["y"] = df["round_idx"] + df["season"].map(offset)
+    df["round_pos"] = df["round_idx"] + df["season"].map(offset)
     tips = dict(hover_cols=["team", "season", "position_md4", "furthest"],
                 hover_tooltips=[("Team", "@team"), ("Season", "@season"),
                                 ("Position after MD4", "@position_md4"),
@@ -134,19 +136,19 @@ def q2_strip(team, on_select):
     for season, marker in markers.items():
         s = df[df["season"].eq(season) & df["team"].ne(team)]
         layers.append(clickable(s.hvplot.scatter(
-            x="position_md4", y="y", color=GREY, marker=marker, size=80, label=season,
+            x="position_md4", y="round_pos", color=GREY, marker=marker, size=80, label=season,
             responsive=True, **tips), s, on_select))
     for season, marker in markers.items():
         s = df[df["season"].eq(season) & df["team"].eq(team)]
         if not s.empty:
-            layers.append(s.hvplot.scatter(x="position_md4", y="y", color=ACCENT, marker=marker,
+            layers.append(s.hvplot.scatter(x="position_md4", y="round_pos", color=ACCENT, marker=marker,
                                            size=200, line_color="white", responsive=True, **tips))
     cut = (hv.VLine(8.5) * hv.VLine(24.5)).opts(hv.opts.VLine(color=REF, line_dash="dashed"))
     return hv.Overlay(layers + [cut]).opts(
-        title="Does an early top-8 spot lead to a deep run? (2024-25 ● and 2025-26 ▲)",
+        title="Position after matchday 4 vs furthest round",
         xlabel="Table position after matchday 4", ylabel="Furthest round reached",
         yticks=list(enumerate(d.Q2_ROUNDS)), xticks=[1, 8, 16, 24, 36], xlim=(0, 37),
-        ylim=(-0.6, len(d.Q2_ROUNDS) - 0.4), height=440, legend_position="bottom_right",
+        ylim=(-0.6, len(d.Q2_ROUNDS) - 0.4), height=440, legend_position="top_right",
         **CHART_OPTS)
 
 
@@ -173,13 +175,19 @@ def q3_heatmap(metric_label, team, countries):
     heat = hv.HeatMap(df, kdims, vdims).redim.values(league_country=order).opts(
         cmap=HEAT_CMAP, colorbar=True, tools=["hover"], line_color="#060a18", line_width=3,
         clabel=metric_label)
-    plain = hv.Labels(df[~df["is_team"]], kdims, "text").opts(text_font_size="9pt", text_color="white")
-    mark = hv.Labels(df[df["is_team"]], kdims, "text").opts(
-        text_font_size="11pt", text_color="#06101f", text_font_style="bold")
-    ring = hv.Points(df[df["is_team"]], kdims).opts(marker="square", size=34, fill_alpha=0.9,
-                                                    color=ACCENT, line_color="white")
-    return (heat * plain * ring * mark).opts(
-        title=f"Which leagues send the strongest clubs? {metric_label} by season",
+    labels = hv.Labels(df[~df["is_team"]], kdims, "text").opts(
+        text_font_size="9pt", text_color="white")
+    plot = heat * labels
+    focus = df[df["is_team"]]
+    if not focus.empty:
+        # Focus team: same cells drawn again with no fill, only a cyan outline, + bold numbers.
+        outline = hv.HeatMap(focus, kdims, vdims).redim.values(league_country=order).opts(
+            fill_alpha=0, line_color=ACCENT, line_width=3, colorbar=False, tools=[])
+        bold = hv.Labels(focus, kdims, "text").opts(
+            text_font_size="10pt", text_color="white", text_font_style="bold")
+        plot = plot * outline * bold
+    return plot.opts(
+        title=f"Which leagues are strongest? {metric_label} by season",
         xlabel="Season (2026-27 in progress)", ylabel="", height=max(340, 46 * len(order) + 110),
         **CHART_OPTS)
 
