@@ -17,11 +17,13 @@ interactive data visualization.
 | Q3 | **Strength by country** — which national leagues send the strongest clubs, and how has that changed? | Heatmap: country × season (points per match, Elo, win rate, clubs in R16) |
 | Q4 | **Title probability** — given current standings and Elo, what is each team's chance? | Horizontal probability bars from a 10,000-run Monte Carlo model (clearly labelled as a model) |
 
-Plus a **match explorer**: a searchable, filterable table of all 897 matches.
+Plus an **Overview** (headline numbers, live table, focus-team card), a **Head-to-head** comparison of any
+two clubs (stats, Elo history, match odds, past meetings) and a **Matches** explorer (all 897 matches).
 
-**Interaction:** sidebar filters (season, searchable team, country, matchday range); hover
-tooltips on every chart; zoom/pan; **linked views** — the selected team is highlighted in every
-chart, and clicking a dot in the Q1 or Q2 chart selects that team everywhere.
+**Design & interaction:** dark "UCL night" theme with one tab per topic. One searchable **focus team**
+(top bar) drives every view — clicking a table row or a dot in the Q1/Q2 charts makes that team the
+focus everywhere (**linked views**). Each tab has only its own controls (matchday range, countries,
+season, metric, stage), hover tooltips on every chart, zoom/pan, and a one-line takeaway computed from the data.
 
 ## Data sources
 
@@ -87,7 +89,10 @@ src/elo.py                          self-computed Elo ratings
 src/prepare.py                      full pipeline: raw -> data/processed/*.parquet
 src/simulate.py                     Monte Carlo title-probability model
 notebooks/01_data_preparation.ipynb narrated data preparation
-app/app.py                          Panel dashboard (reads only data/processed/)
+app/app.py                          Panel dashboard: tabs, widgets, linking
+app/data.py                         loads data/processed/ + headline facts
+app/charts.py                       one function per chart
+app/theme.py                        dark palette, CSS, chart style
 docs/defense_notes.md               questions, design decisions, insights, limitations
 ```
 

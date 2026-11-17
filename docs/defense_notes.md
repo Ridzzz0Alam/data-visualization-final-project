@@ -24,23 +24,30 @@
 | Q1 Contenders | Scatter Elo vs points + least-squares "expected" line | PSG, Real Madrid, Arsenal are strong on both. Over-performers: Club Brugge (+3.9 pts vs expected), Como, Real Betis. Under-performers: Lille (−3.8), **Bayern** (best Elo but only 8 pts, −3.4), Atlético. |
 | Q2 Early form | Bump chart + strip plot MD4 position vs furthest round | Top 8 after MD4: 75% reach R16, 31% the semis. Positions 9–24: 56% / 6%. 25–36: 8% / 4%. Early form helps, but **PSG were 25th after MD4 in 2024-25 and won the title.** |
 | Q3 Countries | Heatmap country × season with metric toggle | England has the best points per match (1.87, 2021-26), but **Spain** has the most quarter-finalists (12) and titles (2). France: 2 titles, both PSG. Italy fluctuates strongly between seasons. |
-| Q4 Title chance | Monte Carlo probability bars | Four clear favourites: PSG 15.9%, Bayern 14.9%, Real Madrid 14.0%, Arsenal 13.6%. Bayern's chance stays high despite few points because the model trusts Elo. |
+| Q4 Title chance | Monte Carlo probability bars + road-to-the-final chart | Four clear favourites: PSG 15.9%, Bayern 14.9%, Real Madrid 14.0%, Arsenal 13.6%. Bayern's chance stays high despite few points because the model trusts Elo. |
 
 ## Design decisions (and why)
 
-1. **One palette: red = selected team, grey = everyone else, navy = reference lines/headers.**
-   The eye goes straight to the selected team in every chart; colour never encodes anything else.
-2. **Chart types fit the data:** scatter for two numeric variables (Q1), bump chart for rank over
+1. **Dark "UCL night" theme, one palette: cyan = focus team, gold = comparison team (head-to-head),
+   slate grey = everyone else, muted blue-grey = reference lines.** The eye goes straight to the focus
+   team in every chart; colour never encodes anything else.
+2. **Tabs instead of one long page:** Overview → one tab per question → Head-to-head → Matches. Each tab
+   starts with the question and a one-line answer computed from the data, and shows only its own controls,
+   so there is no crowded filter sidebar. Code is split into data / theme / charts / app.
+3. **Chart types fit the data:** scatter for two numeric variables (Q1), bump chart for rank over
    time (Q2), strip plot so individual teams stay visible instead of being averaged away (Q2),
    heatmap for two categories × one value (Q3), sorted bars for comparing probabilities (Q4),
-   table for looking up raw matches.
-3. **Linked views:** every view is bound to one team selector (`pn.bind`); clicking a dot uses a
-   HoloViews `Selection1D` stream to set that selector, so one click updates the whole dashboard.
-4. **"Expected" line = least-squares fit**, not a diagonal: Elo and points have different units,
+   lollipop for over/under-performance (+/− around zero), a "road to the final" line for one team's
+   stage-by-stage chances, step lines for Elo history, table for looking up raw matches.
+4. **Linked views:** every view is bound to one focus-team selector (`pn.bind`); clicking a dot
+   (HoloViews `Selection1D` stream) or a table row sets that selector, so one click updates every tab.
+5. **"Expected" line = least-squares fit**, not a diagonal: Elo and points have different units,
    so a y = x line would be meaningless. Above the line = over-performing.
-5. **Heatmap shows only countries with ≥ 50 matches by default:** one club with 6 matches gives
+6. **Heatmap shows only countries with ≥ 50 matches by default:** one club with 6 matches gives
    extreme, meaningless averages. The country filter can still show any country.
-6. **Every chart title is a question**, and captions say which filters apply and what is a model.
+7. **Every chart title is a question**, and captions say which filters apply and what is a model.
+
+Extra finding: goals per match rose every season — 3.04 (2021-22) → 3.27 → 3.47 → **4.04** in 2026-27 so far.
 
 ## Data preparation — what I can explain
 

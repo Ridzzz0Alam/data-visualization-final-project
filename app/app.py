@@ -1,386 +1,318 @@
 """UEFA Champions League 2026/27 — who are the real contenders?
 
-Panel dashboard. Run from the project root:
+Run from the project root:
     panel serve app/app.py --show --autoreload
 
-Reads ONLY data/processed/*.parquet (built by src/prepare.py).
-Layout: sidebar filters, one card per analytical question (Q1-Q4), a match table.
+Structure (one tab per topic, one 'focus team' that drives every view):
+    data.py    loads data/processed/*.parquet + headline facts
+    theme.py   dark 'UCL night' palette, CSS, chart style
+    charts.py  one function per chart (testable on its own)
+    app.py     this file: widgets, tabs, linking
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-import holoviews as hv
-import hvplot.pandas  # noqa: F401  (registers .hvplot on DataFrames, loads the Bokeh backend)
-import numpy as np
+sys.path.insert(0, str(Path(__file__).parent))   # so data/theme/charts import when served
+
 import pandas as pd
 import panel as pn
 
-pn.extension("tabulator", sizing_mode="stretch_width")
+import charts as c
+import data as d
+from theme import (ACCENT, BUTTON_CSS, CARD_BG, CARD_BORDER, CARD_CSS, GOLD, HTML_CSS, MUTED,
+                   PAGE_CSS, TABS_CSS, TEXT)
 
-# --- Data ---------------------------------------------------------------------
-DATA = Path(__file__).resolve().parents[1] / "data" / "processed"
+pn.extension("tabulator", sizing_mode="stretch_width", raw_css=[PAGE_CSS])
+
+TABLE_CSS = f"""
+.tabulator {{ background: {CARD_BG}; border: none; font-family: Outfit, sans-serif; font-size: 14px; }}
+.tabulator .tabulator-header, .tabulator .tabulator-header .tabulator-col {{
+    background: #121c40; color: {MUTED}; border-color: {CARD_BORDER}; }}
+.tabulator-row {{ background: {CARD_BG}; color: {TEXT}; border-bottom: 1px solid {CARD_BORDER}; }}
+.tabulator-row.tabulator-row-even {{ background: #111a38; }}
+.tabulator-row.tabulator-selected {{ background: #0e3a4a !important; box-shadow: inset 4px 0 0 {ACCENT}; }}
+.tabulator-row:hover {{ background: #18244d !important; cursor: pointer; }}
+.tabulator .tabulator-footer {{ background: #121c40; color: {MUTED}; border-color: {CARD_BORDER}; }}
+"""
 
 
-@pn.cache  # load once per server, not once per browser session
-def load(name: str) -> pd.DataFrame:
-    return pd.read_parquet(DATA / f"{name}.parquet")
+# --- Small layout helpers ---------------------------------------------------------------
+def html(markup: str, **kw) -> pn.pane.HTML:
+    return pn.pane.HTML(markup, stylesheets=[HTML_CSS], **kw)
 
 
-team_matches = load("team_matches")
-league_tables = load("league_tables")
-season_outcomes = load("season_outcomes")
-country_season = load("country_season")
-standings_2026 = load("standings_2026")
-matches = load("matches")
-simulation = load("simulation_2026")   # src/simulate.py (Monte Carlo, Q4)
+def card(*objects, **kw) -> pn.Column:
+    return pn.Column(*objects, stylesheets=[CARD_CSS], **kw)
 
-SEASONS = sorted(team_matches["season"].unique())
-CURRENT_SEASON = SEASONS[-1]
-TEAMS = sorted(team_matches["team"].unique())
-COUNTRIES = sorted(team_matches["league_country"].unique())
-MAX_MATCHDAY = int(league_tables["matchday"].max())  # 8 in the 36-team format
 
-# --- Visual design (one palette for every chart) -------------------------------
-ACCENT = "#d62728"     # the selected team
-GREY = "#c7c7c7"       # all other teams
-PRIMARY = "#1f3a93"    # UCL-style navy for headers / neutral marks
+def intro(question: str, takeaway: str) -> pn.pane.HTML:
+    """Top of every tab: the question it answers + a one-line answer from the data."""
+    return html(f'<div class="hero"><p>{question}</p></div>'
+                f'<div class="takeaway" style="margin-top:10px">{takeaway}</div>')
 
-# --- Sidebar widgets ------------------------------------------------------------
-season_w = pn.widgets.Select(name="Season", options=SEASONS, value=CURRENT_SEASON)
 
-# AutocompleteInput = searchable: type "bay" to find Bayern Munich.
-# The list holds all clubs from every season, so a selection survives a season
-# change (needed for the across-season view in Q3).
+def fmt_pct(x: float) -> str:
+    return "–" if pd.isna(x) else f"{x:.1%}"
+
+
+# --- The focus team (drives every view) -----------------------------------------------
 team_w = pn.widgets.AutocompleteInput(
-    name="Team (type to search)", options=TEAMS, value="Arsenal",
+    name="", placeholder="Search a team…", options=d.TEAMS, value="Arsenal",
     case_sensitive=False, search_strategy="includes", restrict=True, min_characters=1,
-)
-country_w = pn.widgets.MultiChoice(name="Country (empty = all)", options=COUNTRIES)
-matchday_w = pn.widgets.IntRangeSlider(
-    name="League matchdays", start=1, end=MAX_MATCHDAY, value=(1, MAX_MATCHDAY), step=1,
+    width=240,
 )
 
 
-# --- Linked views: clicking a dot selects that team everywhere ---------------------------
-def click_selects_team(points: hv.Element, data: pd.DataFrame) -> hv.Element:
-    """Make the dots clickable: a click sets the sidebar team selector.
-
-    Selection1D reports the *row index* of the clicked dot; `data` is the
-    DataFrame the dots were drawn from, so data.iloc[index] is that team.
-    Every view is bound to team_w, so all of them update (= linked views).
-    """
-    stream = hv.streams.Selection1D(source=points)
-
-    def on_click(index: list[int]) -> None:
-        if index:
-            team_w.value = data["team"].iloc[index[0]]
-
-    stream.add_subscriber(on_click)
-    # Tap tool = click to select; nonselection_alpha=1 stops Bokeh fading the other dots.
-    return points.opts(tools=["tap", "hover"], nonselection_alpha=1.0)
+def set_team(name: str) -> None:
+    """Called by clickable charts and the table: makes `name` the focus team."""
+    team_w.value = name
 
 
-# --- Q1: Elo vs points scatter (current season) ------------------------------------
-CURRENT_TABLES = league_tables[league_tables["season"].eq(CURRENT_SEASON)]
-LATEST_MD = int(CURRENT_TABLES["matchday"].max())   # matchdays played so far (4)
+# ================================ TAB 1: OVERVIEW ======================================
+def headline_tiles() -> str:
+    tiles = "".join(
+        f'<div class="tile"><div class="label">{label}</div>'
+        f'<div class="value">{value}</div><div class="sub">{who}</div></div>'
+        for who, value, label in d.HEADLINES.values())
+    return f'<div class="tiles">{tiles}</div>'
 
 
-def q1_data(matchdays: tuple[int, int]) -> pd.DataFrame:
-    """Points and GD won *within* the matchday range, plus Elo and expected points.
+hero = html(
+    '<div class="hero"><h1>Who are the real contenders?</h1>'
+    f'<p>UEFA Champions League {d.CURRENT_SEASON} · after matchday {d.LATEST_MD} of 8 · '
+    'five seasons of history · our own Elo ratings · a 10,000-run title model</p></div>')
+tiles = html(headline_tiles())
 
-    league_tables is cumulative, so points in matchdays a..b =
-    cumulative after b  minus  cumulative after a-1.
-    """
-    start, end = matchdays[0], min(matchdays[1], LATEST_MD)
-    cum = CURRENT_TABLES.set_index(["matchday", "team"])[["points", "goal_diff"]]
-    after_end = cum.loc[end]
-    before = cum.loc[start - 1] if start > 1 else after_end * 0
-    df = (after_end - before).join(
-        standings_2026.set_index("team")[["league_country", "elo", "position"]]).reset_index()
-
-    # "Expected" points = straight line fitted through all 36 teams (least squares).
-    # Fitted before any country filter, so the reference line doesn't move when filtering.
-    slope, intercept = np.polyfit(df["elo"], df["points"], deg=1)
-    df["expected"] = intercept + slope * df["elo"]
-    df["vs_expected"] = (df["points"] - df["expected"]).round(1)  # + = over-performing
-    df["elo"] = df["elo"].round(0)
-    return df
+# Current table; clicking a row makes that team the focus team.
+CHIP_COLOURS = {"W": "#34d399", "D": "#94a3b8", "L": "#f87171"}
 
 
-# Dimension labels make axis titles and hover tooltips readable.
-Q1_DIMS = dict(
-    kdims=[hv.Dimension("elo", label="Elo rating (pts)"), hv.Dimension("points", label="Points")],
-    vdims=[hv.Dimension("team", label="Team"), hv.Dimension("league_country", label="Country"),
-           hv.Dimension("goal_diff", label="Goal difference"),
-           hv.Dimension("vs_expected", label="Points vs expected"),
-           hv.Dimension("position", label="Table position")],
+def form_chips(form: str) -> str:
+    """'W,W,D,L' -> coloured squares (inline styles: the table cell has no shared CSS)."""
+    return "".join(
+        f'<span style="display:inline-block;width:20px;height:20px;line-height:20px;'
+        f'text-align:center;border-radius:6px;margin-right:3px;font-weight:800;font-size:11px;'
+        f'color:#06101f;background:{CHIP_COLOURS[r]}">{r}</span>'
+        for r in form.split(",") if r)
+
+
+table_df = d.standings.merge(d.simulation[["team", "p_win"]], on="team").assign(
+    Form=lambda x: x["form"].fillna("").map(form_chips),
+    Title=lambda x: (x["p_win"] * 100).round(1),
+    Elo=lambda x: x["elo"].round(0).astype(int),
+).rename(columns={"position": "#", "team": "Team", "league_country": "Country", "played": "P",
+                  "won": "W", "goal_diff": "GD", "points": "Pts"})[
+    ["#", "Team", "Country", "P", "W", "GD", "Pts", "Form", "Elo", "Title"]]
+
+standings_table = pn.widgets.Tabulator(
+    table_df, show_index=False, disabled=True, selectable=1, theme="midnight",
+    formatters={"Form": {"type": "html"},
+                "Title": {"type": "progress", "max": float(table_df["Title"].max()),
+                          "color": ACCENT, "legend": True}},
+    titles={"Title": "Title %"}, layout="fit_columns", height=560,
+    widths={"#": 45, "P": 45, "W": 45, "GD": 55, "Pts": 55, "Elo": 65, "Form": 130},
+    stylesheets=[TABLE_CSS],
+)
+standings_table.on_click(lambda e: set_team(table_df.iloc[e.row]["Team"]))
+
+
+def _sync_selection(event) -> None:
+    """Keep the focus team's row highlighted in the table."""
+    standings_table.selection = table_df.index[table_df["Team"].eq(event.new)].tolist()
+
+
+team_w.param.watch(_sync_selection, "value")
+standings_table.selection = table_df.index[table_df["Team"].eq(team_w.value)].tolist()
+
+
+def focus_card(team: str) -> pn.pane.HTML:
+    s = d.team_summary(team)
+    row = d.standings.set_index("team").loc[team] if s["in_current"] else None
+    chips = ""
+    if row is not None and isinstance(row["form"], str):
+        chips = '<div class="chips">' + "".join(
+            f'<div class="chip {r}">{r}</div>' for r in row["form"].split(",")) + "</div>"
+    if row is not None:
+        stats = (f'<div><span>Position</span><b>{int(row["position"])}</b></div>'
+                 f'<div><span>Points</span><b>{int(row["points"])}</b></div>'
+                 f'<div><span>Elo (rank)</span><b>{s["elo"]:.0f} <small>#{s["elo_rank"]}</small></b></div>'
+                 f'<div><span>Title chance</span><b style="color:{ACCENT}">{fmt_pct(s["p_win"])}</b></div>')
+    else:
+        stats = f'<div><span>Status</span><b>Not in {d.CURRENT_SEASON}</b></div>'
+    stats += (f'<div><span>UCL record since 2021</span><b>{s["won"]}-{s["drawn"]}-{s["lost"]}</b></div>'
+              f'<div><span>Best run</span><b>{s["best"]}</b></div>')
+    return html(f'<div class="focus"><div class="label muted">FOCUS TEAM</div><h2>{team}</h2>'
+                f'<div class="country">{s["country"]}</div>{chips}'
+                f'<div class="stats">{stats}</div></div>')
+
+
+# ================================ TAB 2: CONTENDERS (Q1) ===============================
+q1_md_w = pn.widgets.IntRangeSlider(name="League matchdays", start=1, end=8,
+                                    value=(1, d.LATEST_MD), step=1)
+q1_country_w = pn.widgets.MultiChoice(name="Countries (empty = all)", options=d.COUNTRIES)
+
+contenders_tab = pn.Column(
+    intro("Q1 · Which teams are genuinely strong, and who is over- or under-performing their rating?",
+          f"<b>{d.Q1_OVER['team']}</b> has {d.Q1_OVER['vs_expected']:+.1f} points more than its Elo "
+          f"rating predicts; <b>{d.Q1_UNDER['team']}</b> has {d.Q1_UNDER['vs_expected']:+.1f}. "
+          "Above the dashed line = over-performing. Click any dot to focus that team."),
+    pn.Row(q1_md_w, q1_country_w),
+    pn.Row(
+        card(pn.panel(pn.bind(c.q1_scatter, team_w, q1_country_w, q1_md_w, set_team))),
+        card(pn.panel(pn.bind(c.q1_lollipop, team_w, q1_country_w, q1_md_w)),
+             width=470),
+    ),
 )
 
+# ================================ TAB 3: EARLY FORM (Q2) ===============================
+q2_season_w = pn.widgets.RadioButtonGroup(name="Season", options=d.LEAGUE_SEASONS,
+                                          value=d.CURRENT_SEASON, button_type="primary",
+                                          button_style="outline", width=330)
+q2_md_w = pn.widgets.IntRangeSlider(name="Matchdays", start=1, end=8, value=(1, 8), step=1)
 
-def q1_scatter(team: str, countries: list[str], matchdays: tuple[int, int]):
-    if matchdays[0] > LATEST_MD:
-        return pn.pane.Markdown(f"Only matchdays 1–{LATEST_MD} of {CURRENT_SEASON} have been played. "
-                                "Move the matchday slider down.")
-    df = q1_data(matchdays)
-    line = df.sort_values("elo")
-    shown = df[df["league_country"].isin(countries)] if countries else df
-    others, selected = shown[shown["team"] != team], df[df["team"] == team]
+# The champion with the worst position after matchday 4 (the "never write them off" fact).
+_w = d.q2_outcomes[d.q2_outcomes["won_title"]].sort_values("position_md4").iloc[-1]
+_r = d.Q2_RATES
+early_tab = pn.Column(
+    intro("Q2 · How well does the table position after matchday 4 predict a deep run?",
+          f"Top 8 after matchday 4 → <b>{_r.loc['1–8', 'reached_r16']:.0%}</b> reached the Round of 16 "
+          f"and <b>{_r.loc['1–8', 'reached_sf']:.0%}</b> the semis; places 9–24 → "
+          f"{_r.loc['9–24', 'reached_r16']:.0%} and {_r.loc['9–24', 'reached_sf']:.0%}. "
+          f"But <b>{_w['team']} were {int(_w['position_md4'])}th after matchday 4 in {_w['season']} "
+          "— and won the title.</b>"),
+    pn.Row(q2_season_w, q2_md_w),
+    pn.Row(card(pn.panel(pn.bind(c.q2_bump, q2_season_w, team_w, q2_md_w))),
+           card(pn.panel(pn.bind(c.q2_strip, team_w, set_team)))),
+    html('<p class="muted">Right chart: the two completed 36-team seasons (72 teams); '
+         'click a dot to focus that team.</p>'),
+)
 
-    # Label only what matters, to avoid 36 overlapping names: the selected team
-    # plus the 4 biggest over- and under-performers.
-    notable = pd.concat([shown.nlargest(4, "vs_expected"), shown.nsmallest(4, "vs_expected"), selected])
+# ================================ TAB 4: COUNTRIES (Q3) ================================
+q3_metric_w = pn.widgets.RadioButtonGroup(options=list(c.Q3_METRICS), value="Points per match",
+                                          button_type="primary", button_style="outline",
+                                          width=520)
+q3_country_w = pn.widgets.MultiChoice(name="Countries (empty = the 8 biggest)", options=d.COUNTRIES)
+_ct = d.COUNTRY_TOTALS
+countries_tab = pn.Column(
+    intro("Q3 · Which national leagues send the strongest clubs, and how has that changed?",
+          f"<b>{_ct['ppm'].idxmax()}</b> clubs earn the most points per match "
+          f"({_ct['ppm'].max():.2f}, 2021-26), but <b>{_ct['qf'].idxmax()}</b> sent the most "
+          f"quarter-finalists ({int(_ct['qf'].max())}) and won the most titles "
+          f"({int(_ct['titles'].max())}). Highlighted cells = seasons the focus team played."),
+    pn.Row(q3_metric_w, q3_country_w),
+    card(pn.panel(pn.bind(c.q3_heatmap, q3_metric_w, team_w, q3_country_w))),
+    html(f'<p class="muted">Default rows: the {len(d.Q3_DEFAULT_COUNTRIES)} countries with at least '
+         f'{d.Q3_MIN_MATCHES} UCL matches since 2021-22 (smaller samples are noise). '
+         'Monaco counts as France (Ligue 1).</p>'),
+)
 
-    expected_line = hv.Curve(line, "elo", "expected", label="Expected from Elo").opts(
-        color=PRIMARY, line_dash="dashed", line_width=1.5)
-    grey_points = click_selects_team(
-        hv.Points(others, **Q1_DIMS).opts(color=GREY, size=9, line_color="white"), others)
-    accent_point = hv.Points(selected, **Q1_DIMS).opts(color=ACCENT, size=15, line_color="black", tools=["hover"])
-    labels = hv.Labels(notable, ["elo", "points"], "team").opts(
-        text_font_size="8pt", yoffset=0.45, text_color="#444")
+# ================================ TAB 5: TITLE ODDS (Q4) ===============================
+q4_stage_w = pn.widgets.Select(name="Chance to…", options=list(c.Q4_STAGES), value="Win the title",
+                               width=260)
+_top4 = d.simulation.head(4)
+assumptions = pn.Accordion(("Model assumptions — read before trusting the numbers", html(
+    '<ul class="muted" style="font-size:14px">'
+    '<li>The remaining 72 league matches and the knockouts are played 10,000 times (fixed seed).</li>'
+    f'<li>Win/draw/loss odds come from current Elo ratings (home side +50); draw rate '
+    f'{d.DRAW_RATE:.1%}, measured from 2021-26 league/group matches.</li>'
+    '<li>Ratings stay frozen; league ties are broken by current goal difference.</li>'
+    '<li>Fixed bracket: 1st vs winner of 16th/17th … 8th vs winner of 9th/24th — '
+    'the real UCL draw is partly random.</li>'
+    '<li>It shows what the Elo ratings imply. It is <b>not</b> a prediction.</li></ul>')),
+    active=[], stylesheets=[CARD_CSS])
+odds_tab = pn.Column(
+    intro("Q4 · Given current standings and Elo ratings, what is each team's chance of winning?",
+          "The model sees a four-way race: " +
+          ", ".join(f"<b>{r.team}</b> {r.p_win:.0%}" for r in _top4.itertuples()) +
+          f" — together {_top4['p_win'].sum():.0%}. Everyone else shares the rest."),
+    q4_stage_w,
+    pn.Row(card(pn.panel(pn.bind(c.q4_bars, q4_stage_w, team_w))),
+           pn.Column(card(pn.panel(pn.bind(c.q4_road, team_w))), assumptions)),
+)
 
-    md_text = f"MD {matchdays[0]}–{min(matchdays[1], LATEST_MD)}"
-    return (expected_line * grey_points * accent_point * labels).opts(
-        title=f"Who beats their Elo? Points vs Elo rating, {CURRENT_SEASON} ({md_text})",
-        xlabel="Elo rating (pts)", ylabel=f"Points won ({md_text})",
-        responsive=True, height=420, show_legend=True, legend_position="top_left",
-    )
-
-
-# --- Q2 (and Q1): bump chart — table position after every matchday --------------------
-LEAGUE_SEASONS = sorted(league_tables["season"].unique())   # 36-team format only
-
-
-def q2_bump(season: str, team: str, countries: list[str], matchdays: tuple[int, int]):
-    if season not in LEAGUE_SEASONS:
-        return pn.pane.Markdown(
-            f"**{season}** used the old group format (no 36-team table). "
-            f"Pick one of: {', '.join(LEAGUE_SEASONS)}.")
-    df = league_tables[league_tables["season"].eq(season)
-                       & league_tables["matchday"].between(*matchdays)]
-    if df.empty:
-        return pn.pane.Markdown(f"No matchdays in range {matchdays[0]}–{matchdays[1]} for {season}.")
-
-    shown = df[df["league_country"].isin(countries)] if countries else df
-    others, selected = shown[shown["team"] != team], df[df["team"] == team]
-    hover = ["team", "points", "goal_diff"]
-    tips = dict(hover_tooltips=[("Team", "@team"), ("Matchday", "@matchday"),
-                                ("Position", "@position"), ("Points", "@points"),
-                                ("Goal difference", "@goal_diff")])
-
-    # One grey line per team; `by="team"` draws 36 separate lines in one call.
-    grey = others.hvplot.line(responsive=True, x="matchday", y="position", by="team", color=GREY,
-                              line_width=1.5, alpha=0.7, hover_cols=hover, legend=False, **tips)
-    plot = grey
-    if not selected.empty:  # the selected team may not have played this season
-        plot = plot * selected.hvplot.line(responsive=True, x="matchday", y="position", color=ACCENT,
-                                           line_width=4, hover_cols=hover, **tips)
-        plot = plot * selected.hvplot.scatter(responsive=True, x="matchday", y="position", color=ACCENT,
-                                              size=60, hover_cols=hover, **tips)
-
-    # Qualification cut-offs: top 8 -> Round of 16, 9-24 -> knockout play-offs, 25+ out.
-    cutoffs = (hv.HLine(8.5) * hv.HLine(24.5)).opts(
-        hv.opts.HLine(color=PRIMARY, line_dash="dashed", line_width=1))
-    zone_labels = hv.Labels({"x": [matchdays[0]] * 3, "y": [4.5, 16.5, 30.5],
-                             "text": ["Top 8 → R16", "9–24 → play-offs", "25+ → out"]},
-                            ["x", "y"], "text").opts(
-        text_font_size="8pt", text_color=PRIMARY, text_align="left", text_alpha=0.6)
-
-    note = "" if not selected.empty else f" ({team} did not play)"
-    return (plot * cutoffs * zone_labels).opts(
-        title=f"How did {team}'s table position change? {season}{note}",
-        xlabel="League matchday", ylabel="Table position (1 = top)",
-        invert_yaxis=True, xticks=list(range(matchdays[0], matchdays[1] + 1)),
-        yticks=[1, 8, 16, 24, 36], ylim=(0, 37),
-        responsive=True, height=420, show_legend=False,
-    )
+# ================================ TAB 6: HEAD-TO-HEAD ==================================
+team_b_w = pn.widgets.AutocompleteInput(
+    name="Compare with", placeholder="Search a team…", options=d.TEAMS,
+    value=d.simulation.iloc[0]["team"], case_sensitive=False, search_strategy="includes",
+    restrict=True, min_characters=1, width=260)
 
 
-# --- Q2: position after matchday 4 vs furthest round reached ----------------------------
-# Only completed seasons in the 36-team format can answer "how far did they get?".
-Q2_SEASONS = [s for s in LEAGUE_SEASONS if s != CURRENT_SEASON]          # 2024-25, 2025-26
-Q2_ROUNDS = ["League phase", "Knockout playoffs", "Round of 16", "Quarterfinals",
-             "Semifinals", "Final", "Winner"]
-Q2_MARKERS = {Q2_SEASONS[0]: "circle", Q2_SEASONS[-1]: "triangle"}
-Q2_OFFSET = {Q2_SEASONS[0]: -0.15, Q2_SEASONS[-1]: 0.15}   # separate the two seasons vertically
-
-q2_outcomes = season_outcomes[season_outcomes["season"].isin(Q2_SEASONS)].copy()
-q2_outcomes["round_idx"] = q2_outcomes["furthest"].astype(str).map(Q2_ROUNDS.index)
-q2_outcomes["y"] = q2_outcomes["round_idx"] + q2_outcomes["season"].map(Q2_OFFSET)
-q2_outcomes["furthest"] = q2_outcomes["furthest"].astype(str)
-q2_outcomes["band"] = pd.cut(q2_outcomes["position_md4"].astype(float), [0, 8, 24, 36],
-                             labels=["1–8", "9–24", "25–36"])
+def meetings(team_a: str, team_b: str) -> pd.DataFrame:
+    t = d.match_table
+    return t[((t["Home"] == team_a) & (t["Away"] == team_b))
+             | ((t["Home"] == team_b) & (t["Away"] == team_a))]
 
 
-def q2_summary() -> str:
-    """Share of teams per MD4 band that reached the Round of 16 / semi-finals."""
-    rates = q2_outcomes.groupby("band", observed=True)[["reached_r16", "reached_sf"]].mean()
-    parts = [f"**{band}**: {r.reached_r16:.0%} reached R16, {r.reached_sf:.0%} the semis"
-             for band, r in rates.iterrows()]
-    return f"After MD4, by position ({' and '.join(Q2_SEASONS)}, all 72 teams) — " + " · ".join(parts)
+def versus(team_a: str, team_b: str) -> pn.pane.HTML:
+    a, b = d.team_summary(team_a), d.team_summary(team_b)
+    rows = [  # label, value A, value B, format, higher is better? (None = don't compare)
+        ("Elo rating", a["elo"], b["elo"], "{:.0f}", True),
+        ("Elo rank", a["elo_rank"], b["elo_rank"], "#{}", False),
+        ("UCL matches since 2021", a["played"], b["played"], "{}", True),
+        ("Win rate", a["win_rate"], b["win_rate"], "{:.0%}", True),
+        ("Goals scored / match", a["goals_pm"], b["goals_pm"], "{:.2f}", True),
+        ("Goals conceded / match", a["conceded_pm"], b["conceded_pm"], "{:.2f}", False),
+        ("Titles (2021-26)", a["titles"], b["titles"], "{}", True),
+        ("Best run", a["best"], b["best"], "{}", None),
+        (f"Title chance {d.CURRENT_SEASON}", a["p_win"], b["p_win"], "{:.1%}", True),
+    ]
+    body = ""
+    for label, va, vb, f, higher in rows:
+        show = lambda v: "–" if (not isinstance(v, str) and pd.isna(v)) else f.format(v)
+        win_a = win_b = ""
+        if higher is not None and not (pd.isna(va) or pd.isna(vb)) and va != vb:
+            win_a, win_b = ("win", "") if (va > vb) == higher else ("", "win")
+        body += (f'<tr><td class="a {win_a}">{show(va)}</td><td class="k">{label}</td>'
+                 f'<td class="b {win_b}">{show(vb)}</td></tr>')
+    return html(f'<table class="vs"><tr><th class="a">{team_a}</th><th></th>'
+                f'<th class="b">{team_b}</th></tr>{body}</table>')
 
 
-def q2_strip(team: str, countries: list[str]):
-    df = q2_outcomes
-    shown = df[df["league_country"].isin(countries)] if countries else df
-    hover = ["team", "season", "position_md4", "position_final", "furthest"]
-    # Explicit tooltips: hide the internal, vertically shifted "y" value.
-    tips = dict(hover_tooltips=[("Team", "@team"), ("Season", "@season"),
-                                ("Position after MD4", "@position_md4"),
-                                ("Final league position", "@position_final"),
-                                ("Furthest round", "@furthest")])
-
-    layers = []
-    for season, marker in Q2_MARKERS.items():
-        s = shown[shown["season"].eq(season) & shown["team"].ne(team)]
-        layers.append(click_selects_team(
-            s.hvplot.scatter(responsive=True, x="position_md4", y="y", color=GREY, marker=marker,
-                             size=70, hover_cols=hover, label=season, **tips), s))
-    for season, marker in Q2_MARKERS.items():   # selected team drawn last = on top
-        s = df[df["season"].eq(season) & df["team"].eq(team)]
-        if not s.empty:
-            layers.append(s.hvplot.scatter(responsive=True, x="position_md4", y="y", color=ACCENT, marker=marker,
-                                           size=160, line_color="black", hover_cols=hover, **tips))
-
-    cutoffs = (hv.VLine(8.5) * hv.VLine(24.5)).opts(
-        hv.opts.VLine(color=PRIMARY, line_dash="dashed", line_width=1))
-    played = df.loc[df["team"].eq(team), "season"].tolist()
-    note = f"{team}: {', '.join(played)}" if played else f"{team} played in neither season"
-    return hv.Overlay(layers + [cutoffs]).opts(
-        title=f"Does an early top-8 spot lead to a deep run? ({note})",
-        xlabel="Table position after matchday 4", ylabel="Furthest round reached",
-        yticks=list(enumerate(Q2_ROUNDS)), xticks=[1, 8, 16, 24, 36], xlim=(0, 37),
-        ylim=(-0.6, len(Q2_ROUNDS) - 0.4),
-        responsive=True, height=380, legend_position="bottom_right",
-    )
+def odds_bar(team_a: str, team_b: str) -> pn.pane.HTML:
+    if team_a == team_b:
+        return html('<p class="muted">Pick two different teams.</p>')
+    pa, pdraw, pb = d.match_odds(team_a, team_b)
+    n = int((meetings(team_a, team_b)["Score"] != "scheduled").sum())
+    met = (f"They have met <b>{n}</b> time{'s' if n != 1 else ''} in the UCL since 2021-22."
+           if n else "They have not met in the UCL since 2021-22.")
+    return html(
+        f'<div class="takeaway">If <b>{team_a}</b> played <b style="color:{GOLD}">{team_b}</b> on '
+        f'neutral ground, our Elo model gives these odds. {met}</div>'
+        f'<div class="oddsbar"><div style="width:{pa:.0%};background:{ACCENT}">{team_a} {pa:.0%}</div>'
+        f'<div style="width:{pdraw:.0%};background:#94a3b8">Draw {pdraw:.0%}</div>'
+        f'<div style="width:{pb:.0%};background:{GOLD}">{team_b} {pb:.0%}</div></div>')
 
 
-# --- Q3: country x season heatmap -----------------------------------------------------
-Q3_METRICS = {   # label shown to the user -> column in country_season
-    "Points per match": "points_per_match",
-    "Average Elo (end of season)": "mean_elo",
-    "Win rate": "win_rate",
-    "Clubs reaching R16": "clubs_in_r16",
-}
-# Default rows: countries with >= 50 UCL matches over all seasons. Smaller samples
-# (e.g. one club, 6 matches) give noisy values. The country filter overrides this.
-Q3_MIN_MATCHES = 50
-_matches_per_country = country_season.groupby("league_country")["matches"].sum()
-Q3_DEFAULT_COUNTRIES = _matches_per_country[_matches_per_country >= Q3_MIN_MATCHES].index.tolist()
+meetings_table = pn.widgets.Tabulator(
+    pn.bind(meetings, team_w, team_b_w), show_index=False, disabled=True, theme="midnight",
+    layout="fit_data_stretch", height=220, stylesheets=[TABLE_CSS])
 
-q3_metric_w = pn.widgets.RadioButtonGroup(options=list(Q3_METRICS), value="Points per match",
-                                          button_type="light", button_style="outline")
+h2h_tab = pn.Column(
+    html('<div class="hero"><p>Head-to-head · the left team is the focus team (search at the top); '
+         'choose the team to compare with here.</p></div>'),
+    team_b_w,
+    pn.panel(pn.bind(odds_bar, team_w, team_b_w)),
+    pn.Row(card(pn.panel(pn.bind(versus, team_w, team_b_w)), width=520),
+           card(pn.panel(pn.bind(c.h2h_elo, team_w, team_b_w)))),
+    card(html('<b>Past meetings</b>'), meetings_table),
+)
 
-
-def q3_heatmap(metric_label: str, team: str, countries: list[str]):
-    metric = Q3_METRICS[metric_label]
-    df = country_season[country_season["league_country"].isin(countries or Q3_DEFAULT_COUNTRIES)].copy()
-    df["value"] = df[metric].round(0 if metric == "mean_elo" else 2)   # tidy hover values
-    # Rows sorted by the metric's average over all seasons: strongest league on top.
-    order = df.groupby("league_country")["value"].mean().sort_values().index.tolist()
-
-    # Cells where the selected team played: their numbers are drawn in the accent colour.
-    team_cells = team_matches.loc[team_matches["team"].eq(team), ["league_country", "season"]] \
-        .drop_duplicates()
-    df = df.merge(team_cells.assign(is_team=True), on=["league_country", "season"], how="left")
-    df["is_team"] = df["is_team"].fillna(False).astype(bool)
-    df["text"] = df["value"].map(lambda v: f"{v:.0%}" if metric == "win_rate" else
-                                 f"{v:.0f}" if metric in ("mean_elo", "clubs_in_r16") else f"{v:.2f}")
-
-    vdims = [hv.Dimension("value", label=metric_label), hv.Dimension("clubs", label="Clubs"),
-             hv.Dimension("matches", label="Matches"), hv.Dimension("clubs_in_r16", label="Clubs in R16"),
-             hv.Dimension("titles", label="Titles")]
-    kdims = [hv.Dimension("season", label="Season"), hv.Dimension("league_country", label="Country")]
-    heat = hv.HeatMap(df, kdims, vdims).redim.values(league_country=order).opts(
-        cmap="Blues", colorbar=True, tools=["hover"], line_color="white", line_width=2,
-        clabel=metric_label)
-    plain = hv.Labels(df[~df["is_team"]], kdims, "text").opts(text_font_size="8pt", text_color="#333")
-    highlight = hv.Labels(df[df["is_team"]], kdims, "text").opts(
-        text_font_size="10pt", text_color=ACCENT, text_font_style="bold")
-
-    return (heat * plain * highlight).opts(
-        title=f"Which leagues send the strongest clubs? {metric_label} by country and season",
-        xlabel="Season (2026-27 = in progress)", ylabel="League country",
-        responsive=True, height=max(300, 34 * len(order) + 120),
-    )
+# ================================ TAB 7: MATCHES =======================================
+all_teams_w = pn.widgets.Checkbox(name="Show every team (not only the focus team)", value=False)
 
 
-# --- Q4: Monte Carlo title probability (model output from src/simulate.py) ---------------
-Q4_STAGES = {   # label -> column with the probability of reaching that stage
-    "Win the title": "p_win", "Reach the final": "p_final", "Reach the semi-finals": "p_sf",
-    "Reach the quarter-finals": "p_qf", "Reach the Round of 16": "p_r16",
-    "Finish in the top 8": "p_top8", "Reach the knockouts (top 24)": "p_knockouts",
-}
-Q4_TOP_N = 16
-q4_stage_w = pn.widgets.Select(name="Probability to…", options=list(Q4_STAGES), value="Win the title",
-                               max_width=300)
-
-# Probabilities as percentages (0-100): p_win -> pct_win etc.
-q4_data = simulation.assign(**{col.replace("p_", "pct_"): (simulation[col] * 100).round(1)
-                               for col in Q4_STAGES.values()})
-# Explicit hover: every stage's probability for the hovered team.
-Q4_TOOLTIPS = [("Team", "@team"), ("Points now", "@points")] + [
-    (label, f"@{col.replace('p_', 'pct_')}{{0.0}}%") for label, col in Q4_STAGES.items()]
+def match_rows(team: str, every: bool) -> pd.DataFrame:
+    t = d.match_table
+    return t if every else t[t["Home"].eq(team) | t["Away"].eq(team)]
 
 
-def q4_bars(stage: str, team: str, countries: list[str]):
-    df = q4_data[q4_data["league_country"].isin(countries)] if countries else q4_data
-    # The top N teams for this stage, plus the selected team even if it is further down.
-    col = Q4_STAGES[stage].replace("p_", "pct_")
-    df = pd.concat([df.nlargest(Q4_TOP_N, col), q4_data[q4_data["team"].eq(team)]])
-    df = df.drop_duplicates("team").sort_values(col)    # ascending: highest bar on top
-    df["colour"] = np.where(df["team"].eq(team), ACCENT, GREY)
-    return df.hvplot.barh(responsive=True, 
-        x="team", y=col, color="colour", line_color=None,
-        hover_cols=["points", *[c.replace("p_", "pct_") for c in Q4_STAGES.values()]],
-        hover_tooltips=Q4_TOOLTIPS,
-    ).opts(
-        title=f"Who is most likely to {stage[0].lower() + stage[1:]}? (% of 10,000 simulated seasons)",
-        xlabel="", ylabel="Probability (%)", responsive=True, height=max(320, 24 * len(df) + 90),
-        toolbar="above",
-    )
-
-
-# --- Match explorer: searchable table (all views' raw data) -------------------------------
-def _score(m) -> str:
-    """'2–1', '1–1 a.e.t. (4–3 pens)', or 'scheduled' for unplayed matches."""
-    if not m.played:
-        return "scheduled"
-    s = f"{m.home_goals}–{m.away_goals}"
-    if m.extra_time:
-        s += " a.e.t."
-    if pd.notna(m.home_pens):
-        s += f" ({m.home_pens}–{m.away_pens} pens)"
-    return s
-
-
-# Built once: a readable version of `matches` for display.
-match_table = pd.DataFrame({
-    "Date": matches["date"].dt.date,
-    "Season": matches["season"],
-    "Round": matches["round"],
-    "Home": matches["home_team"],
-    "Score": [_score(m) for m in matches.itertuples()],
-    "Away": matches["away_team"],
-    "Home country": matches["home_country"],
-    "Away country": matches["away_country"],
-}).sort_values("Date", ascending=False).reset_index(drop=True)
-
-all_teams_w = pn.widgets.Checkbox(name="Show all teams (not only the selected one)", value=False)
-
-
-def match_rows(team: str, all_teams: bool) -> pd.DataFrame:
-    if all_teams:
-        return match_table
-    return match_table[match_table["Home"].eq(team) | match_table["Away"].eq(team)]
-
-
-# Header filters: a search box per column; dropdowns where there are few values.
 match_tabulator = pn.widgets.Tabulator(
-    pn.bind(match_rows, team_w, all_teams_w),   # value updates when the team changes
-    show_index=False, disabled=True, pagination="local", page_size=12,
-    layout="fit_data_stretch", sizing_mode="stretch_width",
+    pn.bind(match_rows, team_w, all_teams_w), show_index=False, disabled=True,
+    pagination="local", page_size=15, layout="fit_data_stretch", theme="midnight",
+    stylesheets=[TABLE_CSS],
     header_filters={
         "Date": {"type": "input", "func": "like", "placeholder": "e.g. 2026-10"},
         "Season": {"type": "list", "valuesLookup": True, "clearable": True},
@@ -392,90 +324,57 @@ match_tabulator = pn.widgets.Tabulator(
         "Away country": {"type": "list", "valuesLookup": True, "clearable": True},
     },
 )
-
-
-def card(title: str, *content) -> pn.Card:
-    return pn.Card(
-        *content, title=title, collapsible=False,
-        header_background=PRIMARY, header_color="white", min_height=280,
-    )
-
-
-q1 = card(
-    "Q1 · Contenders: who is over- or under-performing their Elo?",
-    # pn.panel (not pn.pane.HoloViews) because q1_scatter may return a plot OR a message.
-    pn.panel(pn.bind(q1_scatter, team_w, country_w, matchday_w)),
-    pn.pane.Markdown(
-        f"Always the current season ({CURRENT_SEASON}). Dashed line = points expected from "
-        "Elo (straight-line fit through all 36 teams). **Above the line = over-performing.** "
-        "**Click a dot** to select that team in every view.",
-        styles={"font-size": "0.85em", "color": "#666"}),
-)
-q2 = card(
-    "Q2 · Early form: does position after matchday 4 predict a deep run?",
-    pn.panel(pn.bind(q2_bump, season_w, team_w, country_w, matchday_w)),
-    pn.panel(pn.bind(q2_strip, team_w, country_w)),
-    pn.pane.Markdown("**Bottom chart:** " + q2_summary() + ". It always uses the two completed "
-                     "36-team seasons (season and matchday filters don't apply). Click a dot to "
-                     "select that team.",
-                     styles={"font-size": "0.85em", "color": "#666"}),
-)
-q3 = card(
-    "Q3 · Strength by country: which leagues send the strongest clubs?",
-    q3_metric_w,
-    pn.panel(pn.bind(q3_heatmap, q3_metric_w, team_w, country_w)),
-    pn.pane.Markdown(
-        f"Default rows: the {len(Q3_DEFAULT_COUNTRIES)} countries with at least {Q3_MIN_MATCHES} UCL "
-        "matches since 2021-22 (smaller samples are too noisy); pick countries in the sidebar to "
-        "change this. **Red numbers** = seasons the selected team played. Monaco counts as France.",
-        styles={"font-size": "0.85em", "color": "#666"}),
-)
-q4 = card(
-    "Q4 · Title probability: who is most likely to win? (model, not a forecast)",
-    q4_stage_w,
-    pn.panel(pn.bind(q4_bars, q4_stage_w, team_w, country_w)),
-    pn.pane.Markdown(
-        "**Model assumptions** (`src/simulate.py`): the remaining 72 league matches and a "
-        "simplified fixed knockout bracket are played 10,000 times. Win/draw/loss odds come from "
-        "current Elo ratings (home +50), with the historical UCL draw rate "
-        f"({simulation.attrs.get('draw_rate', 0.165):.1%}); ratings stay frozen; league ties are "
-        "broken by current goal difference; the real UCL draw is partly random. "
-        "It shows what the Elo ratings imply — not a prediction.",
-        styles={"font-size": "0.85em", "color": "#666"}),
+matches_tab = pn.Column(
+    html('<div class="hero"><p>Every UCL match 2021-22 → 2026-27 (897). Type in the boxes under '
+         'each column header to search.</p></div>'),
+    all_teams_w, card(match_tabulator),
 )
 
-explorer = card(
-    "Match explorer · every UCL match 2021-22 → 2026-27 (search with the boxes under each header)",
-    all_teams_w, match_tabulator,
+# ================================ ASSEMBLE ==============================================
+tabs = pn.Tabs(
+    ("Overview", pn.Column()),           # filled below: its buttons need `tabs` to exist
+    ("Contenders", contenders_tab), ("Early form", early_tab), ("Countries", countries_tab),
+    ("Title odds", odds_tab), ("Head-to-head", h2h_tab), ("Matches", matches_tab),
+    dynamic=True,                         # only the visible tab is rendered -> fast
+    stylesheets=[TABS_CSS],
 )
 
-# --- Layout ---------------------------------------------------------------------
-sidebar_help = pn.pane.Markdown(
-    """
-**Which filter affects what**
 
-- **Team**: highlighted in every view (or click a dot)
-- **Country**: all charts
-- **Season**: bump chart (36-team seasons: 2024-25 onwards)
-- **Matchdays**: Q1 scatter and bump chart
-""",
-    styles={"font-size": "0.85em", "color": "#555"},
-)
-footer = pn.pane.Markdown(
-    "Data: [openfootball/champions-league](https://github.com/openfootball/champions-league) "
-    "(public domain, 2021-22 → 2025-26) · "
-    "[football-data.org](https://www.football-data.org/) API v4 (2026-27) · "
-    "Elo ratings computed by the author from these UCL results "
-    "([Elo method](https://en.wikipedia.org/wiki/Elo_rating_system)); "
-    "title probabilities are a Monte Carlo model (`src/simulate.py`), not a forecast.",
-    styles={"font-size": "0.85em", "color": "#666"},
-)
+def go_to(index: int, label: str) -> pn.widgets.Button:
+    """Button that switches to another tab (easy navigation from the overview)."""
+    btn = pn.widgets.Button(name=label, stylesheets=[BUTTON_CSS])
+    btn.on_click(lambda e: setattr(tabs, "active", index))
+    return btn
+
+
+tabs[0] = ("Overview", pn.Column(
+    hero, tiles,
+    pn.Row(
+        card(html('<b style="font-size:16px">League phase table</b> '
+                  '<span class="muted">· click a row to focus that team</span>'), standings_table),
+        pn.Column(
+            card(pn.panel(pn.bind(focus_card, team_w))),
+            card(html('<b>Explore the questions</b>'),
+                 go_to(1, "Q1 · Who beats their rating? →"), go_to(2, "Q2 · Does early form matter? →"),
+                 go_to(3, "Q3 · Which leagues rule? →"), go_to(4, "Q4 · Who will win? →"),
+                 go_to(5, "⚔ Head-to-head →")),
+            width=380),
+    ),
+))
+
+footer = html(
+    '<div class="footer">Data: <a href="https://github.com/openfootball/champions-league" target="_blank">'
+    'openfootball/champions-league</a> (public domain, 2021-22 → 2025-26) · '
+    '<a href="https://www.football-data.org/" target="_blank">football-data.org</a> API v4 (2026-27) · '
+    'Elo ratings computed from these results (<a href="https://en.wikipedia.org/wiki/Elo_rating_system" '
+    'target="_blank">Elo method</a>) · title odds are a Monte Carlo model, not a forecast.</div>')
 
 template = pn.template.FastListTemplate(
-    title="UEFA Champions League 2026/27 — who are the real contenders?",
-    sidebar=[season_w, team_w, country_w, matchday_w, sidebar_help],
-    main=[pn.Row(q1, q2), pn.Row(q3, q4), explorer, footer],
-    accent=PRIMARY,
-    header_background=PRIMARY,
+    title="UCL 2026/27 · The Real Contenders",
+    header=[pn.Row(pn.pane.HTML('<span style="color:#8b95ba;font:600 13px Outfit,sans-serif;'
+                                'line-height:40px">FOCUS TEAM</span>', width=90),
+                   team_w, width=350, align="center")],
+    main=[tabs, footer], main_layout=None, theme="dark",
+    accent=ACCENT, header_background="#0a1236", background_color="#060a18",
 )
 template.servable()
