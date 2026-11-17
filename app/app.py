@@ -243,6 +243,56 @@ def q2_strip(team: str, countries: list[str]):
     )
 
 
+# --- Q3: country x season heatmap -----------------------------------------------------
+Q3_METRICS = {   # label shown to the user -> column in country_season
+    "Points per match": "points_per_match",
+    "Average Elo (end of season)": "mean_elo",
+    "Win rate": "win_rate",
+    "Clubs reaching R16": "clubs_in_r16",
+}
+# Default rows: countries with >= 50 UCL matches over all seasons. Smaller samples
+# (e.g. one club, 6 matches) give noisy values. The country filter overrides this.
+Q3_MIN_MATCHES = 50
+_matches_per_country = country_season.groupby("league_country")["matches"].sum()
+Q3_DEFAULT_COUNTRIES = _matches_per_country[_matches_per_country >= Q3_MIN_MATCHES].index.tolist()
+
+q3_metric_w = pn.widgets.RadioButtonGroup(options=list(Q3_METRICS), value="Points per match",
+                                          button_type="light", button_style="outline")
+
+
+def q3_heatmap(metric_label: str, team: str, countries: list[str]):
+    metric = Q3_METRICS[metric_label]
+    df = country_season[country_season["league_country"].isin(countries or Q3_DEFAULT_COUNTRIES)].copy()
+    df["value"] = df[metric].round(0 if metric == "mean_elo" else 2)   # tidy hover values
+    # Rows sorted by the metric's average over all seasons: strongest league on top.
+    order = df.groupby("league_country")["value"].mean().sort_values().index.tolist()
+
+    # Cells where the selected team played: their numbers are drawn in the accent colour.
+    team_cells = team_matches.loc[team_matches["team"].eq(team), ["league_country", "season"]] \
+        .drop_duplicates()
+    df = df.merge(team_cells.assign(is_team=True), on=["league_country", "season"], how="left")
+    df["is_team"] = df["is_team"].fillna(False).astype(bool)
+    df["text"] = df["value"].map(lambda v: f"{v:.0%}" if metric == "win_rate" else
+                                 f"{v:.0f}" if metric in ("mean_elo", "clubs_in_r16") else f"{v:.2f}")
+
+    vdims = [hv.Dimension("value", label=metric_label), hv.Dimension("clubs", label="Clubs"),
+             hv.Dimension("matches", label="Matches"), hv.Dimension("clubs_in_r16", label="Clubs in R16"),
+             hv.Dimension("titles", label="Titles")]
+    kdims = [hv.Dimension("season", label="Season"), hv.Dimension("league_country", label="Country")]
+    heat = hv.HeatMap(df, kdims, vdims).redim.values(league_country=order).opts(
+        cmap="Blues", colorbar=True, tools=["hover"], line_color="white", line_width=2,
+        clabel=metric_label)
+    plain = hv.Labels(df[~df["is_team"]], kdims, "text").opts(text_font_size="8pt", text_color="#333")
+    highlight = hv.Labels(df[df["is_team"]], kdims, "text").opts(
+        text_font_size="10pt", text_color=ACCENT, text_font_style="bold")
+
+    return (heat * plain * highlight).opts(
+        title=f"Which leagues send the strongest clubs? {metric_label} by country and season",
+        xlabel="Season (2026-27 = in progress)", ylabel="League country",
+        responsive=True, height=max(300, 34 * len(order) + 120),
+    )
+
+
 def card(title: str, *content) -> pn.Card:
     return pn.Card(
         *content, title=title, collapsible=False,
@@ -271,8 +321,16 @@ q2 = card(
                      "and matchday filters do not apply to this chart.",
                      styles={"font-size": "0.85em", "color": "#666"}),
 )
-q3 = card("Q3 · Strength by country: which leagues send the strongest clubs?",
-          *placeholder("heatmap of country × season (points per match / Elo)."))
+q3 = card(
+    "Q3 · Strength by country: which leagues send the strongest clubs?",
+    q3_metric_w,
+    pn.panel(pn.bind(q3_heatmap, q3_metric_w, team_w, country_w)),
+    pn.pane.Markdown(
+        f"Default rows: the {len(Q3_DEFAULT_COUNTRIES)} countries with at least {Q3_MIN_MATCHES} UCL "
+        "matches since 2021-22 (smaller samples are too noisy); pick countries in the sidebar to "
+        "change this. **Red numbers** = seasons the selected team played. Monaco counts as France.",
+        styles={"font-size": "0.85em", "color": "#666"}),
+)
 q4 = card("Q4 · Title probability: who is most likely to win? (model, not a forecast)",
           *placeholder("Monte Carlo simulation of the remaining matches."))
 
