@@ -165,16 +165,19 @@ def q2_bump(season: str, team: str, countries: list[str], matchdays: tuple[int, 
     shown = df[df["league_country"].isin(countries)] if countries else df
     others, selected = shown[shown["team"] != team], df[df["team"] == team]
     hover = ["team", "points", "goal_diff"]
+    tips = dict(hover_tooltips=[("Team", "@team"), ("Matchday", "@matchday"),
+                                ("Position", "@position"), ("Points", "@points"),
+                                ("Goal difference", "@goal_diff")])
 
     # One grey line per team; `by="team"` draws 36 separate lines in one call.
-    grey = others.hvplot.line(x="matchday", y="position", by="team", color=GREY,
-                              line_width=1.5, alpha=0.7, hover_cols=hover, legend=False)
+    grey = others.hvplot.line(responsive=True, x="matchday", y="position", by="team", color=GREY,
+                              line_width=1.5, alpha=0.7, hover_cols=hover, legend=False, **tips)
     plot = grey
     if not selected.empty:  # the selected team may not have played this season
-        plot = plot * selected.hvplot.line(x="matchday", y="position", color=ACCENT,
-                                           line_width=4, hover_cols=hover)
-        plot = plot * selected.hvplot.scatter(x="matchday", y="position", color=ACCENT,
-                                              size=60, hover_cols=hover)
+        plot = plot * selected.hvplot.line(responsive=True, x="matchday", y="position", color=ACCENT,
+                                           line_width=4, hover_cols=hover, **tips)
+        plot = plot * selected.hvplot.scatter(responsive=True, x="matchday", y="position", color=ACCENT,
+                                              size=60, hover_cols=hover, **tips)
 
     # Qualification cut-offs: top 8 -> Round of 16, 9-24 -> knockout play-offs, 25+ out.
     cutoffs = (hv.HLine(8.5) * hv.HLine(24.5)).opts(
@@ -232,12 +235,12 @@ def q2_strip(team: str, countries: list[str]):
     for season, marker in Q2_MARKERS.items():
         s = shown[shown["season"].eq(season) & shown["team"].ne(team)]
         layers.append(click_selects_team(
-            s.hvplot.scatter(x="position_md4", y="y", color=GREY, marker=marker,
+            s.hvplot.scatter(responsive=True, x="position_md4", y="y", color=GREY, marker=marker,
                              size=70, hover_cols=hover, label=season, **tips), s))
     for season, marker in Q2_MARKERS.items():   # selected team drawn last = on top
         s = df[df["season"].eq(season) & df["team"].eq(team)]
         if not s.empty:
-            layers.append(s.hvplot.scatter(x="position_md4", y="y", color=ACCENT, marker=marker,
+            layers.append(s.hvplot.scatter(responsive=True, x="position_md4", y="y", color=ACCENT, marker=marker,
                                            size=160, line_color="black", hover_cols=hover, **tips))
 
     cutoffs = (hv.VLine(8.5) * hv.VLine(24.5)).opts(
@@ -311,7 +314,7 @@ Q4_STAGES = {   # label -> column with the probability of reaching that stage
 }
 Q4_TOP_N = 16
 q4_stage_w = pn.widgets.Select(name="Probability to…", options=list(Q4_STAGES), value="Win the title",
-                               width=260, sizing_mode="fixed")
+                               max_width=300)
 
 # Probabilities as percentages (0-100): p_win -> pct_win etc.
 q4_data = simulation.assign(**{col.replace("p_", "pct_"): (simulation[col] * 100).round(1)
@@ -325,9 +328,10 @@ def q4_bars(stage: str, team: str, countries: list[str]):
     df = q4_data[q4_data["league_country"].isin(countries)] if countries else q4_data
     # The top N teams for this stage, plus the selected team even if it is further down.
     col = Q4_STAGES[stage].replace("p_", "pct_")
-    df = pd.concat([df.nlargest(Q4_TOP_N, col), q4_data[q4_data["team"].eq(team)]])         .drop_duplicates("team").sort_values(col)            # ascending: highest bar on top
+    df = pd.concat([df.nlargest(Q4_TOP_N, col), q4_data[q4_data["team"].eq(team)]])
+    df = df.drop_duplicates("team").sort_values(col)    # ascending: highest bar on top
     df["colour"] = np.where(df["team"].eq(team), ACCENT, GREY)
-    return df.hvplot.barh(
+    return df.hvplot.barh(responsive=True, 
         x="team", y=col, color="colour", line_color=None,
         hover_cols=["points", *[c.replace("p_", "pct_") for c in Q4_STAGES.values()]],
         hover_tooltips=Q4_TOOLTIPS,
@@ -397,7 +401,6 @@ def card(title: str, *content) -> pn.Card:
     )
 
 
-
 q1 = card(
     "Q1 · Contenders: who is over- or under-performing their Elo?",
     # pn.panel (not pn.pane.HoloViews) because q1_scatter may return a plot OR a message.
@@ -412,8 +415,9 @@ q2 = card(
     "Q2 · Early form: does position after matchday 4 predict a deep run?",
     pn.panel(pn.bind(q2_bump, season_w, team_w, country_w, matchday_w)),
     pn.panel(pn.bind(q2_strip, team_w, country_w)),
-    pn.pane.Markdown(q2_summary() + ". Click a dot to select that team. Uses the two completed 36-team seasons; the season "
-                     "and matchday filters do not apply to this chart.",
+    pn.pane.Markdown("**Bottom chart:** " + q2_summary() + ". It always uses the two completed "
+                     "36-team seasons (season and matchday filters don't apply). Click a dot to "
+                     "select that team.",
                      styles={"font-size": "0.85em", "color": "#666"}),
 )
 q3 = card(
@@ -446,17 +450,30 @@ explorer = card(
 )
 
 # --- Layout ---------------------------------------------------------------------
+sidebar_help = pn.pane.Markdown(
+    """
+**Which filter affects what**
+
+- **Team**: highlighted in every view (or click a dot)
+- **Country**: all charts
+- **Season**: bump chart (36-team seasons: 2024-25 onwards)
+- **Matchdays**: Q1 scatter and bump chart
+""",
+    styles={"font-size": "0.85em", "color": "#555"},
+)
 footer = pn.pane.Markdown(
     "Data: [openfootball/champions-league](https://github.com/openfootball/champions-league) "
     "(public domain, 2021-22 → 2025-26) · "
     "[football-data.org](https://www.football-data.org/) API v4 (2026-27) · "
-    "Elo ratings computed by the author from UCL results.",
+    "Elo ratings computed by the author from these UCL results "
+    "([Elo method](https://en.wikipedia.org/wiki/Elo_rating_system)); "
+    "title probabilities are a Monte Carlo model (`src/simulate.py`), not a forecast.",
     styles={"font-size": "0.85em", "color": "#666"},
 )
 
 template = pn.template.FastListTemplate(
     title="UEFA Champions League 2026/27 — who are the real contenders?",
-    sidebar=[season_w, team_w, country_w, matchday_w],
+    sidebar=[season_w, team_w, country_w, matchday_w, sidebar_help],
     main=[pn.Row(q1, q2), pn.Row(q3, q4), explorer, footer],
     accent=PRIMARY,
     header_background=PRIMARY,
