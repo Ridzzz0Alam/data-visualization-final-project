@@ -221,6 +221,13 @@ def _check_all_sources() -> None:
     match_names = pd.Series([m[side]["name"] for m in fd_matches for side in ("homeTeam", "awayTeam")])
     map_teams(match_names)
     assert set(match_names) <= set(fd["raw"]), "matches file has teams missing from teams file"
+    # Scorers file (optional: older downloads don't have it).
+    scorers_file = root / "cl_2026_scorers.json"
+    if scorers_file.exists():
+        sc = json.loads(scorers_file.read_text(encoding="utf-8"))["scorers"]
+        scorer_teams = pd.Series([s["team"]["name"] for s in sc])
+        map_teams(scorer_teams)
+        assert set(scorer_teams) <= set(fd["raw"]), "scorers file has teams missing from teams file"
 
     # 3) No wrong merges: within one season, two different raw spellings must
     #    never become the same canonical team (that would mean two real clubs merged).

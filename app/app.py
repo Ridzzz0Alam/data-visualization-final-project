@@ -223,6 +223,25 @@ assumptions = pn.Accordion(("Model assumptions — read before trusting the numb
     'the real UCL draw is partly random.</li>'
     '<li>It shows what the Elo ratings imply. It is <b>not</b> a prediction.</li></ul>')),
     active=[], stylesheets=[CARD_CSS])
+def scorer_cards(team: str) -> pn.pane.HTML:
+    """Who scores for the focus team and the model's top 4? (Context, not a model input.)"""
+    teams = list(dict.fromkeys([team, *_top4["team"]]))
+    if team not in set(d.standings["team"]):
+        teams = teams[1:]
+    cards = ""
+    for t in teams:
+        rows = "".join(
+            f'<div class="srow"><span>{p.player}</span><b>{p.goals} G · {p.assists} A</b>'
+            f'<div class="bar"><div style="width:{p.goal_share:.0%}"></div></div></div>'
+            for p in d.team_scorers(t).itertuples()) or '<p class="muted">No player in the top 100.</p>'
+        p_win = d.simulation.set_index("team")["p_win"][t]
+        cards += (f'<div class="scard{" focus-team" if t == team else ""}">'
+                  f'<h4>{t}<span>{p_win:.1%} title</span></h4>{rows}</div>')
+    return html('<b>Who scores the goals?</b> <span class="muted">· top 3 scorers; bar = share of '
+                f'the team\'s goals (MD 1–{d.LATEST_MD})</span><div class="scards" '
+                f'style="margin-top:10px">{cards}</div>')
+
+
 odds_tab = pn.Column(
     intro("Q4 · Given current standings and Elo ratings, what is each team's chance of winning?",
           "The model sees a four-way race: " +
@@ -231,6 +250,11 @@ odds_tab = pn.Column(
     q4_stage_w,
     pn.Row(card(pn.panel(pn.bind(c.q4_bars, q4_stage_w, team_w))),
            pn.Column(card(pn.panel(pn.bind(c.q4_road, team_w))), assumptions)),
+    card(pn.panel(pn.bind(scorer_cards, team_w))),
+    card(pn.panel(pn.bind(c.q4_dependence, team_w, set_team))),
+    html('<p class="muted">Player numbers are context only: the model does not use them, because '
+         'goals are already part of the results the Elo ratings are built from. Click a dot to '
+         'focus that team. Dashed line = median share.</p>'),
 )
 
 # ================================ TAB 6: HEAD-TO-HEAD ==================================
@@ -324,10 +348,28 @@ match_tabulator = pn.widgets.Tabulator(
         "Away country": {"type": "list", "valuesLookup": True, "clearable": True},
     },
 )
+def scorer_rows(team: str, every: bool) -> pd.DataFrame:
+    t = d.scorers if every else d.scorers[d.scorers["team"].eq(team)]
+    return t.assign(share=(t["goal_share"] * 100).round(0))[
+        ["player", "team", "position", "nationality", "played", "goals", "assists",
+         "penalties", "share"]].rename(columns=str.capitalize).rename(columns={"Share": "% of team goals"})
+
+
+scorers_tabulator = pn.widgets.Tabulator(
+    pn.bind(scorer_rows, team_w, all_teams_w), show_index=False, disabled=True,
+    pagination="local", page_size=10, layout="fit_data_stretch", theme="midnight",
+    stylesheets=[TABLE_CSS],
+    header_filters={"Player": {"type": "input", "func": "like", "placeholder": "search"},
+                    "Team": {"type": "input", "func": "like", "placeholder": "search"},
+                    "Position": {"type": "list", "valuesLookup": True, "clearable": True},
+                    "Nationality": {"type": "input", "func": "like", "placeholder": "search"}},
+)
 matches_tab = pn.Column(
     html('<div class="hero"><p>Every UCL match 2021-22 → 2026-27 (897). Type in the boxes under '
          'each column header to search.</p></div>'),
     all_teams_w, card(match_tabulator),
+    card(html(f'<b>Top scorers {d.CURRENT_SEASON}</b> <span class="muted">· the API\'s top 100; '
+              'no free source has player data for past seasons</span>'), scorers_tabulator),
 )
 
 # ================================ ASSEMBLE ==============================================
@@ -365,7 +407,7 @@ tabs[0] = ("Overview", pn.Column(
 footer = html(
     '<div class="footer">Data: <a href="https://github.com/openfootball/champions-league" target="_blank">'
     'openfootball/champions-league</a> (public domain, 2021-22 → 2025-26) · '
-    '<a href="https://www.football-data.org/" target="_blank">football-data.org</a> API v4 (2026-27) · '
+    '<a href="https://www.football-data.org/" target="_blank">football-data.org</a> API v4 (2026-27 matches, standings, teams, top scorers) · '
     'Elo ratings computed from these results (<a href="https://en.wikipedia.org/wiki/Elo_rating_system" '
     'target="_blank">Elo method</a>) · title odds are a Monte Carlo model, not a forecast.</div>')
 

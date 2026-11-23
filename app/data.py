@@ -25,6 +25,7 @@ season_outcomes = load("season_outcomes")
 country_season = load("country_season")
 standings = load("standings_2026")
 simulation = load("simulation_2026")          # src/simulate.py
+scorers = load("scorers_2026")                # top 100 scorers, 2026-27 only
 
 SEASONS = sorted(team_matches["season"].unique())
 CURRENT_SEASON = SEASONS[-1]
@@ -134,7 +135,23 @@ def match_odds(team_a: str, team_b: str) -> tuple[float, float, float]:
     return p_a, 1 - p_a - p_b, p_b
 
 
-# --- Headline facts (Overview tiles) -------------------------------------------------------
+# --- Scorers: how much does each team rely on one player? -----------------------------
+# One row per 2026-27 team. The API list is the top 100 scorers, so a team whose best
+# scorer is not in it has no row in `scorers` -> its share stays NaN (shown as "–").
+_top = scorers[scorers["team_rank"].eq(1)].set_index("team")
+dependence = (standings[["team", "league_country", "goals_for", "points"]]
+              .merge(simulation[["team", "p_win"]], on="team")
+              .assign(top_scorer=lambda x: x["team"].map(_top["player"]),
+                      top_goals=lambda x: x["team"].map(_top["goals"]),
+                      top_share=lambda x: (x["team"].map(_top["goal_share"]) * 100).round(0),
+                      title_pct=lambda x: (x["p_win"] * 100).round(1)))
+
+
+def team_scorers(team: str, n: int = 3) -> pd.DataFrame:
+    return scorers[scorers["team"].eq(team)].head(n)
+
+
+# --- Headline facts (Overview tiles)-------------------------------------------------------
 _q1_all = q1_data((1, LATEST_MD))
 _leader = standings.iloc[0]
 _fav = simulation.iloc[0]

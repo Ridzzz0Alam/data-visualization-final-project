@@ -5,7 +5,8 @@ Run from the project root:
 
 Downloads:
   1. openfootball Champions League match files (past seasons, plain text)
-  2. football-data.org: current 2026/27 UCL matches, league-phase table and teams (JSON)
+  2. football-data.org: current 2026/27 UCL matches, league-phase table, teams and
+     top scorers (JSON)
 
 ClubElo is no longer used: its API returned HTTP 502 for over a week, so team
 strength is computed by us from match results instead (see src/elo.py).
@@ -33,6 +34,9 @@ FOOTBALL_DATA_ENDPOINTS = {
     "standings": "https://api.football-data.org/v4/competitions/CL/standings?season={season}",
     # teams: gives each club's country ("area"), which the matches endpoint lacks (needed for Q3).
     "teams": "https://api.football-data.org/v4/competitions/CL/teams?season={season}",
+    # scorers: goals/assists/penalties per player, current season only (no history in any
+    # free source). limit=100 so we get far more than the API's default top 10.
+    "scorers": "https://api.football-data.org/v4/competitions/CL/scorers?season={season}&limit=100",
 }
 
 
@@ -71,7 +75,7 @@ def main() -> None:
         download(OPENFOOTBALL_URL.format(season=season), RAW / "openfootball" / season / "cl.txt")
     print("   (a missing 2026-27 file is normal until openfootball adds it)")
 
-    print("\n2) football-data.org 2026/27 matches + standings")
+    print("\n2) football-data.org 2026/27 matches, standings, teams, scorers")
     key = read_api_key()
     if not key:
         print("  MISSING API KEY - register for free at https://www.football-data.org/client/register")

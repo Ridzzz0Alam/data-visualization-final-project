@@ -126,6 +126,15 @@ HTML_CSS = f"""
 .oddsbar {{ display: flex; height: 38px; border-radius: 10px; overflow: hidden; font-weight: 800;
            font-size: 14px; margin: 8px 0 4px; }}
 .oddsbar div {{ display: grid; place-items: center; color: #06101f; }}
+.scards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }}
+.scard {{ border: 1px solid {CARD_BORDER}; border-radius: 8px; padding: 10px 12px; }}
+.scard.focus-team {{ border-color: {ACCENT}; }}
+.scard h4 {{ margin: 0; font-size: 16px; display: flex; justify-content: space-between; }}
+.scard h4 span {{ color: {MUTED}; font-weight: 400; font-size: 13px; }}
+.srow {{ display: grid; grid-template-columns: 1fr auto; font-size: 13px; margin-top: 7px; }}
+.srow .bar {{ grid-column: 1 / 3; height: 4px; background: {GRIDLINE}; border-radius: 2px; margin-top: 3px; }}
+.srow .bar div {{ height: 4px; background: {REF}; border-radius: 2px; }}
+.scard.focus-team .srow .bar div {{ background: {ACCENT}; }}
 .footer {{ color: {MUTED}; font-size: 12.5px; text-align: center; padding: 8px; }}
 .footer a {{ color: {ACCENT}; }}
 """

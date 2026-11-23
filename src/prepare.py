@@ -12,6 +12,7 @@ Steps (each is one function, narrated in notebooks/01_data_preparation.ipynb):
   7. season_outcomes     how far each team got each season (Q2, Q3)
   8. standings_2026      current table + Elo (Q1, Q4), checked against the API table
   9. country_season      aggregated by league country x season (Q3)
+ 10. scorers_2026        current-season top scorers + share of their team's goals
 """
 
 from __future__ import annotations
@@ -254,6 +255,43 @@ def country_season(team_matches: pd.DataFrame, outcomes: pd.DataFrame,
     return out
 
 
+# 10 ----------------------------------------------------------------------------
+def scorers_2026(standings: pd.DataFrame) -> pd.DataFrame:
+    """Current-season top scorers (football-data.org, top 100 by goals).
+
+    Cleaning decisions:
+    - assists / penalties are null when the player has none -> filled with 0
+      (null here means "zero", not "unknown": every player with an assist has a number).
+    - goal_share = player's goals / team's goals from OUR match table, so both
+      numbers cover the same matchdays. Own goals scored for the team stay in the
+      team total, which is why shares of one team don't add up to 100%.
+    - Context only: these numbers are NOT used by the title model (src/simulate.py),
+      because goals are already part of the results that Elo is built from.
+    """
+    raw = _read_json("cl_2026_scorers.json")
+    df = pd.DataFrame([{
+        "player": s["player"]["name"],
+        "position": s["player"].get("section") or s["player"].get("position"),
+        "nationality": s["player"].get("nationality"),
+        "team": s["team"]["name"],
+        "played": s["playedMatches"],
+        "goals": s["goals"], "assists": s["assists"], "penalties": s["penalties"],
+    } for s in raw["scorers"]])
+    df["team"] = map_teams(df["team"])
+    df[["assists", "penalties"]] = df[["assists", "penalties"]].fillna(0)
+    df[["played", "goals", "assists", "penalties"]] = df[["played", "goals", "assists",
+                                                          "penalties"]].astype("int64")
+    df["goal_contributions"] = df["goals"] + df["assists"]
+
+    team_goals = standings.set_index("team")["goals_for"]
+    df["team_goals"] = df["team"].map(team_goals)
+    assert df["team_goals"].notna().all(), "scorer's team missing from the 2026 table"
+    assert (df["goals"] <= df["team_goals"]).all(), "player has more goals than his team"
+    df["goal_share"] = df["goals"] / df["team_goals"]
+    df["team_rank"] = df.groupby("team")["goals"].rank(ascending=False, method="first").astype(int)
+    return df.sort_values(["goals", "assists"], ascending=False).reset_index(drop=True)
+
+
 # ------------------------------------------------------------------------------
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
@@ -268,7 +306,8 @@ def main() -> None:
 
     outputs = {"matches": matches, "team_matches": team_matches, "elo_history": elo_hist,
                "league_tables": tables, "season_outcomes": outcomes,
-               "standings_2026": standings, "country_season": countries}
+               "standings_2026": standings, "country_season": countries,
+               "scorers_2026": scorers_2026(standings)}
     for name, df in outputs.items():
         df.to_parquet(OUT / f"{name}.parquet", index=False)
         print(f"{name:16s} {len(df):5d} rows -> data/processed/{name}.parquet")

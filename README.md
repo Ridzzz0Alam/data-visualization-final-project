@@ -31,6 +31,7 @@ season, metric, stage), hover tooltips on every chart, zoom/pan, and a one-line 
 |---|---|---|---|
 | Match results (plain text) | [openfootball/champions-league](https://github.com/openfootball/champions-league) — public domain | 2021-22 → 2025-26 | `python scripts/fetch_data.py` |
 | Matches, standings, teams (JSON) | [football-data.org](https://www.football-data.org/) API v4, free tier | 2026-27 (league phase, matchdays 1–4 played) | `python scripts/fetch_data.py` (needs an API key) |
+| Top 100 scorers: goals, assists, penalties (JSON) | [football-data.org](https://www.football-data.org/) API v4 `/scorers`, free tier | 2026-27 only (no free history) | `python scripts/fetch_data.py` (needs an API key) |
 | Team strength (Elo) | **Computed by us** in `src/elo.py` from the matches above ([Elo method](https://en.wikipedia.org/wiki/Elo_rating_system)) | 2021-22 → 2026-27 | `python src/prepare.py` |
 
 Elo ratings are self-computed because the ClubElo API was unavailable (HTTP 502) for over a week.
@@ -53,7 +54,8 @@ the code is in `src/`.
 6. **Derive:** own Elo ratings; the league table after every matchday (UEFA tie-breakers);
    furthest round reached per team and season; current table + Elo, **verified against the
    official API table**.
-7. **Aggregate** by country × season for Q3.
+7. **Aggregate** by country × season for Q3. **Top scorers** 2026-27: empty assists/penalties
+   → 0, plus each player's share of his team's goals (context only, not a model input).
 8. **Simulate** the rest of 2026-27 (`src/simulate.py`) for Q4.
 
 No rows are dropped; every missing value has a documented reason (see the notebook).

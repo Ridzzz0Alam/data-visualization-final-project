@@ -242,6 +242,32 @@ def q4_road(team):
         legend_position="top_right", **CHART_OPTS)
 
 
+def q4_dependence(team, on_select):
+    """'One-man team?': team goals vs the share scored by its best scorer.
+    Dot size = title chance, so fragile contenders (big dot, high share) stand out."""
+    df = d.dependence.dropna(subset=["top_share"]).reset_index(drop=True)
+    df["dot"] = 8 + df["title_pct"] * 1.6           # px; 0% -> 8px, 16% -> ~34px
+    dims = dict(kdims=[hv.Dimension("goals_for", label="Team goals (MD 1–4)"),
+                       hv.Dimension("top_share", label="Share by top scorer (%)")],
+                vdims=[hv.Dimension("team", label="Team"),
+                       hv.Dimension("top_scorer", label="Top scorer"),
+                       hv.Dimension("top_goals", label="His goals"),
+                       hv.Dimension("title_pct", label="Title chance (%)"), "dot"])
+    others, focus = df[df["team"] != team], df[df["team"] == team]
+    grey = clickable(hv.Points(others, **dims).opts(
+        color=GREY, size="dot", alpha=0.85, line_color="#0e1530", line_width=1.5), others, on_select)
+    accent = hv.Points(focus, **dims).opts(color=ACCENT, size="dot", line_color="white",
+                                           line_width=2, tools=["hover"])
+    labels = hv.Labels(focus, ["goals_for", "top_share"], "top_scorer").opts(
+        text_font_size="9pt", text_color=ACCENT, yoffset=7, text_font_style="bold")
+    avg = hv.HLine(df["top_share"].median()).opts(color=REF, line_dash="dashed", line_width=1)
+    return (grey * accent * labels * avg).opts(
+        title="One-man teams? Goals scored vs share from the top scorer (dot size = title chance)",
+        xlabel=f"Team goals (matchdays 1–{d.LATEST_MD})",
+        ylabel="Share of team goals by its top scorer (%)",
+        height=420, padding=0.08, **CHART_OPTS)
+
+
 # --- Head-to-head ------------------------------------------------------------------------
 def h2h_elo(team_a, team_b):
     df = d.elo_history[d.elo_history["team"].isin([team_a, team_b])]
