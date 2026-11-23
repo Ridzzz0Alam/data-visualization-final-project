@@ -31,13 +31,16 @@ pn.extension("tabulator", "plotly", sizing_mode="stretch_width", raw_css=[PAGE_C
 
 TABLE_CSS = f"""
 .tabulator {{ background: {CARD_BG}; border: none; font-family: Outfit, sans-serif; font-size: 14px; }}
+/* !important: the 'midnight' Tabulator theme otherwise paints rows and headers grey. */
 .tabulator .tabulator-header, .tabulator .tabulator-header .tabulator-col {{
-    background: #121c40; color: {MUTED}; border-color: {CARD_BORDER}; }}
-.tabulator-row {{ background: {CARD_BG}; color: {TEXT}; border-bottom: 1px solid {CARD_BORDER}; }}
-.tabulator-row.tabulator-row-even {{ background: #111a38; }}
+    background: #0f1656 !important; color: {MUTED} !important; border-color: {CARD_BORDER} !important; }}
+.tabulator-tableholder, .tabulator-table {{ background: {CARD_BG} !important; }}
+.tabulator-row {{ background: {CARD_BG} !important; color: {TEXT}; border-bottom: 1px solid {CARD_BORDER}; }}
+.tabulator-row .tabulator-cell {{ border-right-color: {CARD_BORDER} !important; }}
+.tabulator-row.tabulator-row-even {{ background: #0c1249 !important; }}
 .tabulator-row.tabulator-selected {{ background: #0e3a4a !important; box-shadow: inset 4px 0 0 {ACCENT}; }}
-.tabulator-row:hover {{ background: #18244d !important; cursor: pointer; }}
-.tabulator .tabulator-footer {{ background: #121c40; color: {MUTED}; border-color: {CARD_BORDER}; }}
+.tabulator-row:hover {{ background: #162070 !important; cursor: pointer; }}
+.tabulator .tabulator-footer {{ background: #0f1656; color: {MUTED}; border-color: {CARD_BORDER}; }}
 """
 
 
@@ -630,17 +633,37 @@ footer = html(
     'openfootball/champions-league</a> (public domain, 2021-22 → 2025-26) · '
     '<a href="https://www.football-data.org/" target="_blank">football-data.org</a> API v4 (2026-27 matches, standings, teams, top scorers) · '
     'Elo ratings computed from these results (<a href="https://en.wikipedia.org/wiki/Elo_rating_system" '
-    'target="_blank">Elo method</a>) · title odds are a Monte Carlo model, not a forecast.</div>')
+    'target="_blank">Elo method</a>) · title odds are a Monte Carlo model, not a forecast.'
+    '<br>Unofficial student project, not affiliated with or endorsed by UEFA.</div>')
+
+
+def fixtures_strip(team: str) -> pn.pane.HTML:
+    """Next matchday's fixtures (our own data) with our Elo model's chances per match.
+    The focus team's match is outlined in cyan."""
+    md, fx = d.next_fixtures()
+    if md is None:
+        return html("")
+    cards = ""
+    for f in fx.itertuples():
+        hl = " focus-team" if team in (f.home_team, f.away_team) else ""
+        row = lambda name, p: (f'<div class="fx-team{" focus" if name == team else ""}">'
+                               f'<span>{name}</span><b>{p:.0%}</b></div>')
+        cards += (f'<div class="fx-card{hl}"><div class="fx-date">{f.date:%a %d %b}</div>'
+                  f'{row(f.home_team, f.p_home)}{row(f.away_team, f.p_away)}'
+                  f'<div class="fx-draw">draw {f.p_draw:.0%}</div></div>')
+    return html(f'<div class="fx"><div class="fx-head"><b>MATCHDAY {md}</b> · next fixtures · '
+                'win chances from our Elo model (home team first)</div>'
+                f'<div class="fx-row">{cards}</div></div>')
 
 template = pn.template.FastListTemplate(
     title="UCL 2026/27 · The Real Contenders",
-    header=[pn.Row(pn.pane.HTML('<span style="color:#8b95ba;font:600 13px Outfit,sans-serif;'
+    header=[pn.Row(pn.pane.HTML('<span style="color:#97a1d6;font:600 13px Outfit,sans-serif;'
                                 'line-height:40px">FOCUS TEAM</span>', width=90),
                    team_w, width=350, align="center")],
-    main=[tabs, footer], main_layout=None, theme="dark",
+    main=[pn.panel(pn.bind(fixtures_strip, team_w)), tabs, footer], main_layout=None, theme="dark",
     # The design is dark-only (all colours in theme.py), so hide the template's light/dark
     # switch, and hide its header spinner that flickers on every recalculation.
     theme_toggle=False, busy_indicator=None,
-    accent=ACCENT, header_background="#0a1236", background_color="#060a18",
+    accent=ACCENT, header_background="#0d1cb0", background_color="#04072b",
 )
 template.servable()

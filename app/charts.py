@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 
 def message(text: str) -> pn.pane.Markdown:
     """Shown instead of an empty chart."""
-    return pn.pane.Markdown(f"*{text}*", styles={"color": "#8b95ba", "font-size": "15px"})
+    return pn.pane.Markdown(f"*{text}*", styles={"color": "#97a1d6", "font-size": "15px"})
 
 
 def clickable(points: hv.Element, data: pd.DataFrame, on_select: Callable[[str], None]) -> hv.Element:
@@ -61,7 +61,7 @@ def q1_scatter(team, countries, matchdays, on_select):
     line = hv.Curve(df.sort_values("elo"), "elo", "expected", label="Expected from Elo").opts(
         color=REF, line_dash="dashed", line_width=2)
     grey = clickable(hv.Points(others, **Q1_DIMS).opts(
-        color=GREY, size=11, line_color="#0e1530", line_width=1.5), others, on_select)
+        color=GREY, size=11, line_color="#0a0f42", line_width=1.5), others, on_select)
     accent = hv.Points(focus, **Q1_DIMS).opts(color=ACCENT, size=18, line_color="white",
                                               line_width=2, tools=["hover"])
     labels = hv.Labels(focus, ["elo", "points"], "team").opts(
@@ -229,7 +229,7 @@ def q3_heatmap(metric_label, team, countries):
     vdims = [hv.Dimension("value", label=metric_label), hv.Dimension("clubs", label="Clubs"),
              hv.Dimension("matches", label="Matches"), hv.Dimension("titles", label="Titles")]
     heat = hv.HeatMap(df, kdims, vdims).redim.values(league_country=order).opts(
-        cmap=HEAT_CMAP, colorbar=True, tools=["hover"], line_color="#060a18", line_width=3,
+        cmap=HEAT_CMAP, colorbar=True, tools=["hover"], line_color="#04072b", line_width=3,
         clabel=metric_label)
     labels = hv.Labels(df[~df["is_team"]], kdims, "text").opts(
         text_font_size="9pt", text_color="white")
@@ -311,7 +311,7 @@ def q4_dependence(team, on_select):
                        hv.Dimension("title_pct", label="Title chance (%)"), "dot"])
     others, focus = df[df["team"] != team], df[df["team"] == team]
     grey = clickable(hv.Points(others, **dims).opts(
-        color=GREY, size="dot", alpha=0.85, line_color="#0e1530", line_width=1.5), others, on_select)
+        color=GREY, size="dot", alpha=0.85, line_color="#0a0f42", line_width=1.5), others, on_select)
     accent = hv.Points(focus, **dims).opts(color=ACCENT, size="dot", line_color="white",
                                            line_width=2, tools=["hover"])
     labels = hv.Labels(focus, ["goals_for", "top_share"], "top_scorer").opts(
@@ -353,17 +353,17 @@ def q4_3d(team):
             mode="markers+text", text=[t if t in labelled else "" for t in sub["team"]],
             textposition="top center", textfont=dict(color=colour if colour == ACCENT else TEXT_LIGHT,
                                                      size=12),
-            marker=dict(size=size, color=colour, line=dict(color="#0e1530", width=1)),
+            marker=dict(size=size, color=colour, line=dict(color="#0a0f42", width=1)),
             hovertemplate="<b>%{customdata}</b><br>Elo %{x:.0f} · %{y} pts<br>"
                           "Title chance %{z:.1f}%<extra></extra>", showlegend=False))
 
-    axis = dict(backgroundcolor=CARD_BG_HEX, gridcolor="#1f2a4d", zerolinecolor="#1f2a4d",
-                color="#8b95ba", showspikes=False)
+    axis = dict(backgroundcolor=CARD_BG_HEX, gridcolor="#1c2668", zerolinecolor="#1c2668",
+                color="#97a1d6", showspikes=False)
     fig = go.Figure(traces)
     fig.update_layout(
         title=dict(text="Strength × results × odds: Elo rating, points and title chance in 3D "
                         "(drag to rotate, click a dot to focus)", font=dict(size=14, color=TEXT_LIGHT)),
-        paper_bgcolor=CARD_BG_HEX, font=dict(family="Outfit, Segoe UI, sans-serif", color="#8b95ba"),
+        paper_bgcolor=CARD_BG_HEX, font=dict(family="Outfit, Segoe UI, sans-serif", color="#97a1d6"),
         margin=dict(l=0, r=0, t=40, b=0), height=560,
         uirevision="keep",                     # keep the user's rotation when the focus team changes
         scene=dict(xaxis=dict(title="Elo rating", **axis), yaxis=dict(title="Points (MD 1–4)", **axis),
@@ -443,18 +443,18 @@ def skyline(team, matchday, layer=3):
         # Small dots on each tower top carry the hover text (Mesh3d hover is per vertex).
         dict(type="scatter3d", x=[p[0] for p in tops], y=[p[1] for p in tops],
              z=[p[2] + 0.5 for p in tops], customdata=[p[3] for p in tops], mode="markers",
-             marker=dict(size=4, color=[ACCENT if p[3] == team else "#8b95ba" for p in tops],
+             marker=dict(size=4, color=[ACCENT if p[3] == team else "#97a1d6" for p in tops],
                          opacity=0.9),
              text=[f"<b>{p[3]}</b><br>Matchday {p[1]}: {result.get(p[5], '')} (+{p[5]})"
                    f"<br>{int(p[2])} pts · {p[4]}. in the table" for p in tops],
              hovertemplate="%{text}<extra></extra>"),
     ]
-    axis = dict(backgroundcolor=CARD_BG_HEX, gridcolor="#1f2a4d", zerolinecolor="#1f2a4d",
-                color="#8b95ba", showspikes=False)
+    axis = dict(backgroundcolor=CARD_BG_HEX, gridcolor="#1c2668", zerolinecolor="#1c2668",
+                color="#97a1d6", showspikes=False)
     layout = dict(
         showlegend=False, paper_bgcolor=CARD_BG_HEX, height=600, autosize=True,
         margin=dict(l=0, r=0, t=10, b=0), uirevision="keep",   # keep the user's rotation
-        font=dict(family="Outfit, Segoe UI, sans-serif", color="#8b95ba"),
+        font=dict(family="Outfit, Segoe UI, sans-serif", color="#97a1d6"),
         scene=dict(
             xaxis=dict(title="", tickvals=list(range(len(order))), ticktext=order,
                        range=[-0.7, len(order) - 0.3], **axis),

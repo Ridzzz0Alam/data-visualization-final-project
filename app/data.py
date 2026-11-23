@@ -163,6 +163,29 @@ def team_scorers(team: str, n: int = 3) -> pd.DataFrame:
     return scorers[scorers["team"].eq(team)].head(n)
 
 
+# --- Next fixtures (strip under the header) ----------------------------------------------
+HOME_ADVANTAGE = 50.0       # Elo points for the home side: same value as src/elo.py
+
+
+def next_fixtures() -> tuple[int | None, pd.DataFrame]:
+    """The next unplayed matchday of the current season + Elo win/draw/loss chances.
+
+    Exactly the title model's rule (src/simulate.py): Elo expectation with the home side
+    +50; home win = expectation - half the draw rate; draw = the measured draw rate.
+    """
+    todo = matches[matches["season"].eq(CURRENT_SEASON) & ~matches["played"]]
+    if todo.empty:
+        return None, todo
+    md = int(todo["matchday"].min())
+    fx = todo[todo["matchday"].eq(md)].sort_values(["date", "home_team"]).copy()
+    e = 1 / (1 + 10 ** (-(fx["home_team"].map(ELO_NOW) + HOME_ADVANTAGE
+                          - fx["away_team"].map(ELO_NOW)) / 400))
+    fx["p_home"] = (e - DRAW_RATE / 2).clip(lower=0)
+    fx["p_draw"] = DRAW_RATE
+    fx["p_away"] = 1 - fx["p_home"] - fx["p_draw"]
+    return md, fx
+
+
 # --- Headline facts (Overview tiles)-------------------------------------------------------
 _q1_all = q1_data((1, LATEST_MD))
 _leader = standings.iloc[0]

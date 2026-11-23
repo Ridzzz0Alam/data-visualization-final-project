@@ -11,20 +11,21 @@ from bokeh.models import ColorBar
 from bokeh.palettes import interp_palette
 
 # --- Palette ---------------------------------------------------------------------
-PAGE_BG = "#060a18"
-CARD_BG = "#0e1530"
-CARD_BORDER = "#1d2a52"
+PAGE_BG = "#04072b"
+CARD_BG = "#0a0f42"
+CARD_BORDER = "#1b2580"
 TEXT = "#e8ecff"
-MUTED = "#8b95ba"
-GRIDLINE = "#1f2a4d"
+MUTED = "#97a1d6"
+GRIDLINE = "#1c2668"
 ACCENT = "#22d3ee"      # focus team
 ACCENT_DIM = "#0e7490"  # focus team, older/background marks (3D skyline)
+HEADER_GRADIENT = "linear-gradient(90deg, #1b30ff 0%, #0d1cb0 45%, #070c5c 100%)"
 GOLD = "#fbbf24"        # second team (head-to-head) / favourite
-GREY = "#46527a"        # other teams
-REF = "#7c86ad"         # reference lines
+GREY = "#475093"        # other teams
+REF = "#7f8ac4"         # reference lines
 # Smooth 256-step scale (5 colours alone give hard blocks). It stops at mid-blue, so
 # white numbers stay readable on every cell.
-HEAT_CMAP = list(interp_palette(["#111a3a", "#1e3a8a", "#2563eb", "#3b9be8"], 256))
+HEAT_CMAP = list(interp_palette(["#0d1450", "#1e3a8a", "#2563eb", "#3b9be8"], 256))
 FONT = "Outfit, 'Segoe UI', sans-serif"
 
 
@@ -72,7 +73,9 @@ PAGE_CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
 body, #main, .main {{ background: {PAGE_BG} !important; }}
 body {{ font-family: {FONT}; color: {TEXT}; }}
-#header {{ background: #0a1236 !important; border-bottom: 1px solid {CARD_BORDER}; }}
+/* Royal-blue to navy header, in the spirit of the competition's look (colours only:
+   no UEFA logo, wordmark, typeface or artwork, which are UEFA's trademarks). */
+#header {{ background: {HEADER_GRADIENT} !important; border-bottom: 1px solid #2a3bd6; }}
 .app-header .title {{ font-weight: 600 !important; letter-spacing: .2px; }}
 """
 
@@ -82,14 +85,15 @@ TABS_CSS = f"""
 .bk-tab {{ font-family: {FONT}; font-size: 15px; font-weight: 600; color: {MUTED} !important;
           padding: 10px 18px !important; border: none !important; border-radius: 10px 10px 0 0;
           background: transparent !important; transition: all .15s; }}
-.bk-tab:hover {{ color: {TEXT} !important; background: #121c40 !important; }}
+.bk-tab:hover {{ color: {TEXT} !important; background: #0f1656 !important; }}
 .bk-tab.bk-active {{ color: {TEXT} !important; background: {CARD_BG} !important;
                     box-shadow: inset 0 -3px 0 {ACCENT}; }}
 """
 
+# Cards: rounder corners and a faint lighter top edge (like light catching the edge).
 CARD_CSS = f"""
-:host {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: 8px;
-        padding: 14px 16px; }}
+:host {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: 12px;
+        padding: 14px 16px; box-shadow: inset 0 1px 0 rgba(120, 140, 255, .18); }}
 """
 
 HTML_CSS = f"""
@@ -99,7 +103,7 @@ HTML_CSS = f"""
 .hero p {{ color: {MUTED}; margin: 0; font-size: 15px; }}
 .tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }}
 .tile {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER};
-        border-radius: 8px; padding: 12px 14px; }}
+        border-radius: 12px; padding: 12px 14px; box-shadow: inset 0 1px 0 rgba(120, 140, 255, .18); }}
 .tile .label {{ color: {MUTED}; font-size: 12px; letter-spacing: .3px; }}
 .tile .value {{ font-size: 26px; font-weight: 600; color: {TEXT}; line-height: 1.2; margin-top: 4px; }}
 .tile .sub {{ color: {TEXT}; opacity: .75; font-weight: 400; font-size: 13px; }}
@@ -147,12 +151,31 @@ HTML_CSS = f"""
 .story .notice b {{ color: {ACCENT}; font-size: 11px; letter-spacing: .8px; }}
 .footer {{ color: {MUTED}; font-size: 12.5px; text-align: center; padding: 8px; }}
 .footer a {{ color: {ACCENT}; }}
+/* Fixtures strip (next matchday, our own data + Elo odds) */
+.fx {{ background: {HEADER_GRADIENT}; border-radius: 12px; padding: 10px 14px 12px;
+       border: 1px solid #2a3bd6; }}
+.fx-head {{ font-size: 12px; letter-spacing: .8px; color: #c9d1ff; margin-bottom: 8px; }}
+.fx-head b {{ color: #fff; }}
+.fx-row {{ display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
+           scrollbar-width: thin; scrollbar-color: #2a3bd6 transparent; }}
+.fx-card {{ flex: 0 0 172px; background: rgba(4, 7, 43, .55); border: 1px solid rgba(255,255,255,.08);
+            border-radius: 10px; padding: 8px 10px; font-size: 13px; }}
+.fx-card.focus-team {{ border-color: {ACCENT}; box-shadow: 0 0 0 1px {ACCENT} inset; }}
+.fx-date {{ color: #b8c1f5; font-size: 11.5px; margin-bottom: 4px; }}
+.fx-team {{ display: flex; justify-content: space-between; gap: 6px; line-height: 1.55; }}
+.fx-team span {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.fx-team b {{ font-weight: 600; color: #dfe4ff; }}
+.fx-team.focus span, .fx-team.focus b {{ color: {ACCENT}; font-weight: 700; }}
+.fx-draw {{ color: #8f9ad6; font-size: 11px; text-align: right; }}
 """
 
+# Cyan outline buttons that fill on hover.
 BUTTON_CSS = f"""
-:host(.solid) .bk-btn, .bk-btn {{ font-family: {FONT}; font-weight: 500; border-radius: 6px;
-    background: #13204a; color: {TEXT}; border: 1px solid {CARD_BORDER}; padding: 10px 14px; }}
-.bk-btn:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
+:host(.solid) .bk-btn, .bk-btn {{ font-family: {FONT}; font-weight: 600; border-radius: 8px;
+    background: transparent !important; color: {ACCENT} !important; border: 1px solid {ACCENT};
+    padding: 10px 14px; }}
+.bk-btn:hover {{ background: {ACCENT} !important; color: #04072b !important; }}
+.bk-btn:disabled {{ border-color: {CARD_BORDER}; color: {MUTED} !important; background: transparent !important; }}
 """
 
 # Dark text input (the header's focus-team search box defaults to white-on-white).
@@ -168,5 +191,5 @@ select.bk-input:focus {{ border-color: {ACCENT}; }}
 select.bk-input option, select.bk-input optgroup {{ background: {CARD_BG}; color: {TEXT}; }}
 select.bk-input optgroup {{ color: {MUTED}; font-style: normal; }}
 .bk-menu {{ background: {CARD_BG}; color: {TEXT}; border: 1px solid {CARD_BORDER}; }}
-.bk-menu > .bk-active, .bk-menu > *:hover {{ background: #18244d; }}
+.bk-menu > .bk-active, .bk-menu > *:hover {{ background: #162070; }}
 """
