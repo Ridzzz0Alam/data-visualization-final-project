@@ -15,7 +15,7 @@ interactive data visualization.
 | Q1 | **Contenders** — which teams are strong this season, and who is over- or under-performing their underlying strength? | Scatter: Elo rating vs points, with an "expected from Elo" fit line + animated Elo race (top 12 after every match date since 2021) |
 | Q2 | **Early form** — how well does the table position after matchday 4 predict a deep run? (2024-25, 2025-26: the 36-team format) | Animated bump chart (replay the league phase matchday by matchday) + strip plot of MD4 position vs furthest round |
 | Q3 | **Strength by country** — which national leagues send the strongest clubs, and how has that changed? | Heatmap: country × season (points per match, Elo, win rate, clubs in R16) |
-| Q4 | **Title probability** — given current standings and Elo, what is each team's chance? | Horizontal probability bars from a 10,000-run Monte Carlo model (clearly labelled as a model) |
+| Q4 | **Title probability** — given current standings and Elo, what is each team's chance? | Horizontal probability bars from a 10,000-run Monte Carlo model (clearly labelled as a model) + rotatable 3D view (Plotly) of Elo × points × title chance |
 
 Plus an **Overview** (headline numbers, live table, focus-team card), a **Head-to-head** comparison of any
 two clubs (stats, Elo history, match odds, past meetings) and a **Matches** explorer (all 897 matches).

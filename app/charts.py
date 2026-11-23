@@ -14,6 +14,8 @@ import panel as pn
 import data as d
 from theme import ACCENT, CHART_OPTS, GOLD, GREY, HEAT_CMAP, REF
 from theme import TEXT as TEXT_LIGHT
+from theme import CARD_BG as CARD_BG_HEX
+import plotly.graph_objects as go
 
 
 def message(text: str) -> pn.pane.Markdown:
@@ -320,6 +322,57 @@ def q4_dependence(team, on_select):
         xlabel=f"Team goals (matchdays 1–{d.LATEST_MD})",
         ylabel="Share of team goals by its top scorer (%)",
         height=420, padding=0.08, **CHART_OPTS)
+
+
+def q4_3d(team):
+    """3D view (Plotly): Elo rating x points so far x title chance, one dot per team.
+
+    Why 3D here: the title chance depends on BOTH strength (Elo) and results so far (points),
+    so the third axis is the outcome of the other two. Drag to rotate; the vertical stems
+    show each dot's height, which is hard to judge in 3D otherwise.
+    """
+    df = d.standings.merge(d.simulation[["team", "p_win"]], on="team")
+    df["title_pct"] = (df["p_win"] * 100).round(1)
+    df["elo"] = df["elo"].round(0)
+    labelled = {team}          # the top 4 sit close together: their labels overlapped; hover names all
+
+    def stems(sub):  # one line per team from z=0 up to the dot; None breaks the line
+        xs, ys, zs = [], [], []
+        for r in sub.itertuples():
+            xs += [r.elo, r.elo, None]; ys += [r.points, r.points, None]; zs += [0, r.title_pct, None]
+        return xs, ys, zs
+
+    traces = []
+    for sub, colour, size in [(df[df["team"] != team], GREY, 6), (df[df["team"] == team], ACCENT, 11)]:
+        xs, ys, zs = stems(sub)
+        traces.append(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines", hoverinfo="skip",
+                                   line=dict(color=colour, width=3 if colour == ACCENT else 2),
+                                   showlegend=False))
+        traces.append(go.Scatter3d(
+            x=sub["elo"], y=sub["points"], z=sub["title_pct"], customdata=sub["team"],
+            mode="markers+text", text=[t if t in labelled else "" for t in sub["team"]],
+            textposition="top center", textfont=dict(color=colour if colour == ACCENT else TEXT_LIGHT,
+                                                     size=12),
+            marker=dict(size=size, color=colour, line=dict(color="#0e1530", width=1)),
+            hovertemplate="<b>%{customdata}</b><br>Elo %{x:.0f} · %{y} pts<br>"
+                          "Title chance %{z:.1f}%<extra></extra>", showlegend=False))
+
+    axis = dict(backgroundcolor=CARD_BG_HEX, gridcolor="#1f2a4d", zerolinecolor="#1f2a4d",
+                color="#8b95ba", showspikes=False)
+    fig = go.Figure(traces)
+    fig.update_layout(
+        title=dict(text="Strength × results × odds: Elo rating, points and title chance in 3D "
+                        "(drag to rotate, click a dot to focus)", font=dict(size=14, color=TEXT_LIGHT)),
+        paper_bgcolor=CARD_BG_HEX, font=dict(family="Outfit, Segoe UI, sans-serif", color="#8b95ba"),
+        margin=dict(l=0, r=0, t=40, b=0), height=560,
+        uirevision="keep",                     # keep the user's rotation when the focus team changes
+        scene=dict(xaxis=dict(title="Elo rating", **axis), yaxis=dict(title="Points (MD 1–4)", **axis),
+                   zaxis=dict(title="Title chance (%)", **axis),
+                   aspectmode="manual", aspectratio=dict(x=1.6, y=1.1, z=0.75),
+                   camera=dict(eye=dict(x=1.45, y=-1.7, z=0.55), center=dict(x=0, y=0, z=-0.2))),
+        autosize=True,
+    )
+    return fig
 
 
 # --- Head-to-head ------------------------------------------------------------------------

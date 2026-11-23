@@ -26,7 +26,7 @@ import data as d
 from theme import (ACCENT, BUTTON_CSS, CARD_BG, CARD_BORDER, CARD_CSS, GOLD, HTML_CSS, MUTED,
                    PAGE_CSS, PLAYER_CSS, SEARCH_CSS, TABS_CSS, TEXT)
 
-pn.extension("tabulator", sizing_mode="stretch_width", raw_css=[PAGE_CSS])
+pn.extension("tabulator", "plotly", sizing_mode="stretch_width", raw_css=[PAGE_CSS])
 
 TABLE_CSS = f"""
 .tabulator {{ background: {CARD_BG}; border: none; font-family: Outfit, sans-serif; font-size: 14px; }}
@@ -258,6 +258,21 @@ def scorer_cards(team: str) -> pn.pane.HTML:
                 f'style="margin-top:10px">{cards}</div>')
 
 
+# 3D chart: ONE Plotly pane whose figure is swapped when the focus team changes (a new pane
+# per change would lose the click watcher). Clicking a dot makes that team the focus team.
+q4_3d_pane = pn.pane.Plotly(c.q4_3d(team_w.value), config={"displaylogo": False, "responsive": True},
+                            height=560, sizing_mode="stretch_width")
+team_w.param.watch(lambda e: setattr(q4_3d_pane, "object", c.q4_3d(e.new)), "value")
+
+
+def _click_3d(event) -> None:
+    points = (event.new or {}).get("points") or []
+    if points and points[0].get("customdata"):
+        set_team(points[0]["customdata"])
+
+
+q4_3d_pane.param.watch(_click_3d, "click_data")
+
 odds_tab = pn.Column(
     intro("Q4 · Given current standings and Elo ratings, what is each team's chance of winning?",
           "The model sees a four-way race: " +
@@ -266,6 +281,7 @@ odds_tab = pn.Column(
     q4_stage_w,
     pn.Row(card(pn.panel(pn.bind(c.q4_bars, q4_stage_w, team_w))),
            pn.Column(card(pn.panel(pn.bind(c.q4_road, team_w))), assumptions)),
+    card(q4_3d_pane),
     card(pn.panel(pn.bind(scorer_cards, team_w))),
     card(pn.panel(pn.bind(c.q4_dependence, team_w, set_team))),
     html('<p class="muted">Player numbers are context only: the model does not use them, because '
