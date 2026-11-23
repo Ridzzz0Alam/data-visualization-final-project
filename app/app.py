@@ -24,7 +24,8 @@ import panel as pn
 import charts as c
 import data as d
 from theme import (ACCENT, BUTTON_CSS, CARD_BG, CARD_BORDER, CARD_CSS, GOLD, HTML_CSS, MUTED,
-                   PAGE_CSS, PLAYER_CSS, SEARCH_CSS, TABS_CSS, TEXT)
+                   PAGE_CSS, SEARCH_CSS, TABS_CSS, TEXT)
+from controls import ArrowKeys, PlayButton, SimplePlayer
 
 pn.extension("tabulator", "plotly", sizing_mode="stretch_width", raw_css=[PAGE_CSS])
 
@@ -158,10 +159,9 @@ q1_md_w = pn.widgets.IntRangeSlider(name="League matchdays", start=1, end=8,
 q1_country_w = pn.widgets.MultiChoice(name="Countries (empty = all)", options=d.COUNTRIES)
 
 # Animation: Elo race over all 163 match dates (starts on the latest date = today's ratings).
-elo_player = pn.widgets.Player(name="Match date", start=0, end=len(d.ELO_DATES) - 1,
-                               value=len(d.ELO_DATES) - 1, interval=120, loop_policy="once",
-                               show_loop_controls=False, width=420, stylesheets=[PLAYER_CSS])
-elo_race = hv.DynamicMap(pn.bind(c.elo_race_frame, elo_player, team_w))
+elo_player = SimplePlayer("Match date", range(len(d.ELO_DATES)),
+                          [f"{t:%d %b %Y}" for t in d.ELO_DATES], interval=120)
+elo_race = hv.DynamicMap(pn.bind(c.elo_race_frame, elo_player.slider, team_w))
 
 contenders_tab = pn.Column(
     intro("Q1 · Which teams are genuinely strong, and who is over- or under-performing their rating?",
@@ -174,8 +174,8 @@ contenders_tab = pn.Column(
         card(pn.panel(pn.bind(c.q1_lollipop, team_w, q1_country_w, q1_md_w)),
              width=470),
     ),
-    card(elo_player, pn.pane.HoloViews(elo_race)),
-    html('<p class="muted">How did today\'s ratings come about? Press ▶ to replay every UCL '
+    card(elo_player.view, pn.pane.HoloViews(elo_race)),
+    html('<p class="muted">How did today\'s ratings come about? Press Play to replay every UCL '
          'match date since September 2021 (or drag the slider). The focus team is highlighted.</p>'),
 )
 
@@ -183,12 +183,11 @@ contenders_tab = pn.Column(
 q2_season_w = pn.widgets.RadioButtonGroup(name="Season", options=d.LEAGUE_SEASONS,
                                           value=d.CURRENT_SEASON, button_type="primary",
                                           button_style="outline", width=330)
-# Animation: the Player steps through matchdays 1..8 by itself ("replay the season").
+# Animation: Play steps through matchdays 1..8 by itself ("replay the season").
 # The chart is a DynamicMap, so each step updates the existing plot instead of redrawing it.
-q2_player = pn.widgets.Player(name="Matchday", start=1, end=8, value=8, interval=900,
-                              loop_policy="once", show_loop_controls=False, width=330,
-                              stylesheets=[PLAYER_CSS])
-q2_replay = hv.DynamicMap(pn.bind(c.q2_replay_frame, q2_season_w, team_w, q2_player))
+q2_player = SimplePlayer("Matchday", range(1, 9), [f"MD {m}" for m in range(1, 9)],
+                         interval=900, width=300)
+q2_replay = hv.DynamicMap(pn.bind(c.q2_replay_frame, q2_season_w, team_w, q2_player.slider))
 
 # The champion with the worst position after matchday 4 (the "never write them off" fact).
 _w = d.q2_outcomes[d.q2_outcomes["won_title"]].sort_values("position_md4").iloc[-1]
@@ -200,8 +199,8 @@ early_tab = pn.Column(
           f"{_r.loc['9–24', 'reached_r16']:.0%} and {_r.loc['9–24', 'reached_sf']:.0%}. "
           f"But <b>{_w['team']} were {int(_w['position_md4'])}th after matchday 4 in {_w['season']} "
           "— and won the title.</b>"),
-    pn.Row(q2_season_w, html('<span class="muted">▶ replay the league phase matchday by '
-                             'matchday:</span>', align="center", width=280), q2_player),
+    pn.Row(q2_season_w, html('<span class="muted">Replay the league phase, matchday by '
+                             'matchday:</span>', align="center", width=280), q2_player.view),
     pn.Row(card(pn.pane.HoloViews(q2_replay)),
            card(pn.panel(pn.bind(c.q2_strip, team_w, set_team)))),
     html('<p class="muted">Right chart: the two completed 36-team seasons (72 teams); '
@@ -406,40 +405,190 @@ matches_tab = pn.Column(
 )
 
 # ================================ TAB: STORY (guided steps) ============================
-# Step 1 for now: the 3D season skyline. The Player reveals one matchday row at a time;
-# ONE Plotly pane is updated in place (uirevision keeps the user's rotation).
-story_player = pn.widgets.Player(name="Matchday", start=1, end=d.LATEST_MD, value=d.LATEST_MD,
-                                 interval=1300, loop_policy="once", show_loop_controls=False,
-                                 width=300, stylesheets=[PLAYER_CSS])
-skyline_pane = pn.pane.Plotly(c.skyline(team_w.value, story_player.value),
+# The season told in 6 steps (Back / Next, the step buttons, or the ← → keys). Each step
+# shows one chart, sets the focus team it talks about, and starts its animation.
+
+# --- Step 1: 3D season skyline. "Build the season" stacks the blocks frame by frame;
+# the MD buttons jump straight to one matchday. ONE Plotly pane is updated in place
+# (uirevision keeps the user's rotation).
+sky_md_w = pn.widgets.RadioButtonGroup(
+    options={f"MD {m}": m for m in range(1, d.LATEST_MD + 1)}, value=d.LATEST_MD,
+    button_type="primary", button_style="outline", width=280)
+skyline_pane = pn.pane.Plotly(c.skyline(team_w.value, d.LATEST_MD),
                               config={"displaylogo": False, "responsive": True},
                               height=600, sizing_mode="stretch_width")
+_sky_animating = False      # True while the animation moves the MD buttons itself
 
 
-def _update_skyline(event=None) -> None:
-    skyline_pane.object = c.skyline(team_w.value, story_player.value)
+def _sky_frame(frame) -> None:
+    global _sky_animating
+    matchday, layer = frame
+    skyline_pane.object = c.skyline(team_w.value, matchday, layer)
+    _sky_animating = True
+    sky_md_w.value = matchday
+    _sky_animating = False
 
 
-story_player.param.watch(_update_skyline, "value")
-team_w.param.watch(_update_skyline, "value")
+sky_play = PlayButton(c.skyline_frames(), _sky_frame, interval=260, label="▶  Build the season")
+
+
+def _sky_md_clicked(event) -> None:
+    if not _sky_animating:                  # a user click: stop the animation, show that MD
+        sky_play.stop()
+        skyline_pane.object = c.skyline(team_w.value, event.new)
+
+
+sky_md_w.param.watch(_sky_md_clicked, "value")
+team_w.param.watch(lambda e: skyline_pane.param.update(
+    object=c.skyline(e.new, sky_md_w.value)), "value")
 skyline_pane.param.watch(_click_3d, "click_data")      # click a tower top -> focus team
 
+# --- Steps 3, 4 and 6 need their own copies of charts that also live in other tabs
+# (one widget can only be shown in one place).
+story_elo_player = SimplePlayer("Match date", range(len(d.ELO_DATES)),
+                                [f"{t:%d %b %Y}" for t in d.ELO_DATES], interval=120)
+story_replay_player = SimplePlayer("Matchday", range(1, 9), [f"MD {m}" for m in range(1, 9)],
+                                   interval=900, width=300)
+STORY_REPLAY_SEASON = _w["season"]          # the season with the comeback champion (Q2)
+story_3d_pane = pn.pane.Plotly(c.q4_3d(team_w.value), config={"displaylogo": False,
+                               "responsive": True}, height=560, sizing_mode="stretch_width")
+team_w.param.watch(lambda e: story_3d_pane.param.update(object=c.q4_3d(e.new)), "value")
+story_3d_pane.param.watch(_click_3d, "click_data")
+
+# --- Facts for the step texts (all computed from the data) ---------------------------
 _perfect = d.standings.loc[d.standings["points"].eq(3 * d.LATEST_MD), "team"].tolist()
-story_text = html(
-    f'<div class="story"><div class="step">STEP 1 / 6 <span class="tag">THE TABLE</span></div>'
-    f'<h3>Who\'s on top?</h3>'
-    '<p>Each block is <b>one point</b>. Every club in today\'s top 12 has a tower for each '
-    'matchday, so you can watch the season being built.</p>'
-    '<p>Brighter blocks are the points won <b>on that matchday</b>: three new blocks = a win, '
-    'one = a draw, none = a loss.</p>'
-    f'<div class="notice"><b>NOTICE</b><br>{" and ".join(_perfect) or "Nobody"} '
-    f'{"have" if len(_perfect) > 1 else "has"} won all {d.LATEST_MD} matches, the only '
-    f'perfect {3 * d.LATEST_MD}-block towers. Drag to rotate, hover a tower for the result, '
-    'click it to focus that team.</div></div>')
-story_tab = pn.Row(
-    card(pn.Row(html('<b>▶ Build the season</b> <span class="muted">matchday by matchday</span>',
-                     align="center", width=300), story_player), skyline_pane),
-    card(story_text, width=380),
+_elo_leaders = d.ELO_WIDE.idxmax(axis=1)                 # #1 club after every match date
+_elo_top = d.ELO_NOW.idxmax()
+
+
+def _and(names: list[str]) -> str:
+    return " and ".join(names) if names else "Nobody"
+
+
+# Each step: tag, title, text, notice, focus team (None = keep), chart, start animation,
+# and the tab with the full interactive version ("Explore this chart").
+STEPS = [
+    dict(tag="THE TABLE", title="Who's on top?",
+         text="<p>Each block is <b>one point</b>. Every club in today's top 12 has a tower for "
+              "each matchday, so you can watch the season being built.</p>"
+              "<p>Brighter blocks are the points won <b>on that matchday</b>: three new blocks = "
+              "a win, one = a draw, none = a loss.</p>",
+         notice=f"{_and(_perfect)} {'have' if len(_perfect) > 1 else 'has'} won all "
+                f"{d.LATEST_MD} matches: the only perfect {3 * d.LATEST_MD}-block towers. Drag to "
+                "rotate, hover a tower for the result, click it to focus that team.",
+         focus=None, explore=0,
+         chart=pn.Column(pn.Row(sky_play.button, sky_md_w), skyline_pane),
+         start=sky_play.play),
+    dict(tag="STRENGTH", title="Who beats their rating?",
+         text="<p>Each dot is a team: its <b>Elo rating</b> (strength built up over five "
+              "seasons) against its <b>points this season</b>. The dashed line is what the rating "
+              "predicts.</p><p>Above the line = more points than its strength suggests.</p>",
+         notice=f"<b>{d.Q1_OVER['team']}</b> have {d.Q1_OVER['vs_expected']:+.1f} points more than "
+                f"predicted, <b>{d.Q1_UNDER['team']}</b> {d.Q1_UNDER['vs_expected']:+.1f}. After "
+                f"only {d.LATEST_MD} matches, part of that is luck.",
+         focus=d.Q1_OVER["team"], explore=2,
+         chart=pn.panel(pn.bind(c.q1_scatter, team_w, [], (1, d.LATEST_MD), set_team)),
+         start=None),
+    dict(tag="HISTORY", title="How did they get strong?",
+         text="<p>Every match moves the ratings: beating a stronger team earns more than "
+              "beating a weaker one. Watch the top 12 re-order after every UCL match date "
+              "since September 2021.</p>",
+         notice=f"{_elo_leaders.nunique()} different clubs have been rated #1 since 2021. "
+                f"Today it is <b>{_elo_top}</b> ({d.ELO_NOW.max():.0f}).",
+         focus=_elo_top, explore=2,
+         chart=pn.Column(story_elo_player.view, pn.pane.HoloViews(hv.DynamicMap(
+             pn.bind(c.elo_race_frame, story_elo_player.slider, team_w)))),
+         start=story_elo_player.restart),
+    dict(tag="EARLY FORM", title="Does early form matter?",
+         text=f"<p>In the 36-team format, <b>{_r.loc['1–8', 'reached_r16']:.0%}</b> of the top 8 "
+              f"after matchday 4 reached the Round of 16, but only "
+              f"<b>{_r.loc['25–36', 'reached_r16']:.0%}</b> of places 25–36.</p>"
+              f"<p>This is the {STORY_REPLAY_SEASON} league phase, matchday by matchday.</p>",
+         notice=f"<b>{_w['team']}</b> were {int(_w['position_md4'])}th after matchday 4 in "
+                f"{_w['season']}, and went on to win the title. Early form helps, it doesn't decide.",
+         focus=_w["team"], explore=3,
+         chart=pn.Column(story_replay_player.view, pn.pane.HoloViews(hv.DynamicMap(
+             pn.bind(c.q2_replay_frame, STORY_REPLAY_SEASON, team_w, story_replay_player.slider)))),
+         start=story_replay_player.restart),
+    dict(tag="LEAGUES", title="Which leagues rule?",
+         text="<p>Points per match won by each country's clubs, season by season (2021-22 → "
+              "today). Brighter = stronger.</p>",
+         notice=f"<b>{_ct['ppm'].idxmax()}</b> clubs earn the most points per match "
+                f"({_ct['ppm'].max():.2f}), but <b>{_ct['qf'].idxmax()}</b> sent the most "
+                f"quarter-finalists ({int(_ct['qf'].max())}) and won {int(_ct['titles'].max())} titles.",
+         focus=None, explore=4,
+         chart=pn.panel(pn.bind(c.q3_heatmap, "Points per match", team_w, [])),
+         start=None),
+    dict(tag="THE ODDS", title="Who will win?",
+         text="<p>10,000 simulated seasons, using today's table and Elo ratings. In 3D: strength "
+              "(Elo), results (points) and the resulting <b>title chance</b>.</p>"
+              "<p>Drag to rotate; the four tall stems are the contenders.</p>",
+         notice="The model sees a four-way race: " + ", ".join(
+             f"<b>{r.team}</b> {r.p_win:.0%}" for r in _top4.itertuples()) +
+                ". It shows what the ratings imply, not a prediction.",
+         focus=d.simulation.iloc[0]["team"], explore=5,
+         chart=story_3d_pane, start=None),
+]
+
+story_steps_w = pn.widgets.RadioButtonGroup(
+    options={f"{i + 1} · {s['title']}": i for i, s in enumerate(STEPS)}, value=0,
+    button_type="primary", button_style="outline")
+story_chart = card(STEPS[0]["chart"])
+story_text = html("")
+back_btn = pn.widgets.Button(name="← Back", width=100, stylesheets=[BUTTON_CSS])
+next_btn = pn.widgets.Button(name="", stylesheets=[BUTTON_CSS])
+explore_btn = pn.widgets.Button(name="Explore this chart ↗", width=190, stylesheets=[BUTTON_CSS])
+arrow_keys = ArrowKeys(width=0, height=0)
+_story_animations = [sky_play, story_elo_player, story_replay_player]
+
+
+def _render_step(i: int) -> str:
+    s = STEPS[i]
+    return (f'<div class="story"><div class="step">STEP {i + 1} / {len(STEPS)} '
+            f'<span class="tag">{s["tag"]}</span></div><h3>{s["title"]}</h3>{s["text"]}'
+            f'<div class="notice"><b>NOTICE</b><br>{s["notice"]}</div></div>')
+
+
+def show_step(i: int, animate: bool = True) -> None:
+    """Switch the story to step i: text, chart, focus team, buttons, animation."""
+    for a in _story_animations:
+        a.stop()
+    s = STEPS[i]
+    if s["focus"]:
+        set_team(s["focus"])
+    story_text.object = _render_step(i)
+    story_chart.objects = [s["chart"]]
+    back_btn.disabled = i == 0
+    next_btn.name = (f"Next: {STEPS[i + 1]['title']} →" if i < len(STEPS) - 1
+                     else "↺ Start again")
+    if story_steps_w.value != i:
+        story_steps_w.value = i              # keeps the step buttons in sync
+    if animate and s["start"]:
+        s["start"]()
+
+
+def _go(delta: int) -> None:
+    show_step((story_steps_w.value + delta) % len(STEPS))
+
+
+def _step_clicked(event) -> None:
+    if event.new != event.old:
+        show_step(event.new)
+
+
+story_steps_w.param.watch(_step_clicked, "value")
+back_btn.on_click(lambda e: _go(-1))
+next_btn.on_click(lambda e: _go(+1))
+explore_btn.on_click(lambda e: setattr(tabs, "active", STEPS[story_steps_w.value]["explore"]))
+arrow_keys.param.watch(lambda e: _go(+1 if e.new.startswith("ArrowRight") else -1), "key")
+show_step(0, animate=False)
+
+story_tab = pn.Column(
+    pn.Row(story_steps_w, explore_btn, arrow_keys),
+    pn.Row(story_chart,
+           card(story_text, pn.Row(back_btn, next_btn),
+                html('<p class="muted" style="margin:4px 0 0">Tip: use the ← → keys.</p>'),
+                width=380)),
 )
 
 # ================================ ASSEMBLE ==============================================
@@ -452,6 +601,16 @@ tabs = pn.Tabs(
     stylesheets=[TABS_CSS],
 )
 
+
+def _story_tab_opened(event) -> None:
+    if event.new == 1:                       # Story tab: (re)start this step's animation
+        show_step(story_steps_w.value)
+    else:                                    # leaving it: stop story animations
+        for a in _story_animations:
+            a.stop()
+
+
+tabs.param.watch(_story_tab_opened, "active")
 
 def go_to(index: int, label: str) -> pn.widgets.Button:
     """Button that switches to another tab (easy navigation from the overview)."""

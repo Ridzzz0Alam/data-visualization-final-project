@@ -376,24 +376,29 @@ def q4_3d(team):
 
 
 SKYLINE_N = 12                                   # top 12 of the current table
+# Colour of each block kind (index = kind): other team old/new, focus team old/new.
+_SKY_COLOURS = [GREY, "#9aa6d1", ACCENT_DIM, ACCENT]
+# One unit cube: 8 corners and 12 triangles (2 per face). Every block is this cube,
+# scaled and moved, which numpy does for all blocks at once.
+_CUBE_V = np.array([(x, y, z) for z in (0, 1) for y in (0, 1) for x in (0, 1)], dtype=float)
+_CUBE_T = np.array([(0, 1, 3), (0, 3, 2), (4, 5, 7), (4, 7, 6), (0, 1, 5), (0, 5, 4),
+                    (2, 3, 7), (2, 7, 6), (0, 2, 6), (0, 6, 4), (1, 3, 7), (1, 7, 5)])
+BLOCK_W, BLOCK_D, BLOCK_H = 0.62, 0.58, 0.82     # < 1, so the gaps show the separate blocks
 
 
-def _box(x0, x1, y0, y1, z0, z1):
-    """Vertices + 12 triangles (6 faces x 2) of one box, for a Plotly Mesh3d."""
-    v = [(x, y, z) for z in (z0, z1) for y in (y0, y1) for x in (x0, x1)]
-    tri = [(0, 1, 3), (0, 3, 2), (4, 5, 7), (4, 7, 6), (0, 1, 5), (0, 5, 4),
-           (2, 3, 7), (2, 7, 6), (0, 2, 6), (0, 6, 4), (1, 3, 7), (1, 7, 5)]
-    edges = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4),
-             (0, 4), (1, 5), (2, 6), (3, 7)]
-    return v, tri, edges
+def skyline_frames() -> list[tuple[int, int]]:
+    """Animation frames (matchday, layer): each matchday row appears at its old height
+    (layer 0), then the points won that day stack on one block at a time (layers 1-3)."""
+    return [(m, layer) for m in range(1, d.LATEST_MD + 1) for layer in range(4)]
 
 
-def skyline(team, matchday):
+def skyline(team, matchday, layer=3):
     """3D 'season skyline': one tower per club (top 12 now), one row per matchday.
 
     Each block = 1 point, tower height = points after that matchday (cumulative), and the
     blocks won ON that matchday are brighter (3 new = a win, 1 = a draw, 0 = a loss).
-    Animated by revealing one matchday row at a time.
+    `layer` limits the newest row to its old height + `layer` new blocks (animation).
+    Built with numpy and numeric colours so each animation frame stays small.
     """
     tbl = d.CURRENT_TABLES
     order = d.standings.head(SKYLINE_N)["team"].tolist()       # x position = current rank
@@ -403,45 +408,50 @@ def skyline(team, matchday):
     pos = tbl.pivot_table(index="team", columns="matchday", values="position").loc[order]
     md = min(matchday, d.LATEST_MD)
 
-    xs, ys, zs, i, j, k, colours = [], [], [], [], [], [], []
-    ex, ey, ez = [], [], []
+    blocks = []                                                  # (x, y, z, kind)
     for xi, t in enumerate(order):
-        focus = t == team
-        old, new = (ACCENT_DIM, ACCENT) if focus else (GREY, "#9aa6d1")
+        focus = 2 if t == team else 0
         for m in range(1, md + 1):
             before = 0 if m == 1 else int(cum.loc[t, m - 1])
-            for z in range(int(cum.loc[t, m])):
-                v, tri, edges = _box(xi - 0.32, xi + 0.32, m - 0.3, m + 0.3, z * 0.98, z * 0.98 + 0.9)
-                base = len(xs)
-                xs += [p[0] for p in v]; ys += [p[1] for p in v]; zs += [p[2] for p in v]
-                for a, b, c_ in tri:
-                    i.append(base + a); j.append(base + b); k.append(base + c_)
-                    colours.append(new if z >= before else old)
-                for a, b in edges:
-                    ex += [v[a][0], v[b][0], None]; ey += [v[a][1], v[b][1], None]
-                    ez += [v[a][2], v[b][2], None]
+            top = int(cum.loc[t, m])
+            if m == md:
+                top = min(top, before + layer)
+            blocks += [(xi, m, z, focus + (z >= before)) for z in range(top)]
+    b = np.array(blocks, dtype=float).reshape(-1, 4)
 
-    # Invisible-ish markers on each tower top carry the hover text (Mesh3d hover is per vertex).
-    tops = [(xi, m, cum.loc[t, m], t, int(pos.loc[t, m]),
+    size = np.array([BLOCK_W, BLOCK_D, BLOCK_H])
+    corner = b[:, :3] - [BLOCK_W / 2, BLOCK_D / 2, 0]            # front-left-bottom corner
+    verts = (corner[:, None, :] + _CUBE_V[None, :, :] * size).reshape(-1, 3)
+    tris = (_CUBE_T[None, :, :] + 8 * np.arange(len(b))[:, None, None]).reshape(-1, 3)
+    kind = np.repeat(b[:, 3], 12)                                # one value per triangle
+    n_k = len(_SKY_COLOURS) - 1
+    scale = [(k / n_k, c_) for k, c_ in enumerate(_SKY_COLOURS)]
+
+    tops = [(xi, m, float(cum.loc[t, m]), t, int(pos.loc[t, m]),
              int(cum.loc[t, m] - (cum.loc[t, m - 1] if m > 1 else 0)))
             for xi, t in enumerate(order) for m in range(1, md + 1)]
     result = {3: "win", 1: "draw", 0: "loss"}
-    fig = go.Figure([
-        go.Mesh3d(x=xs, y=ys, z=zs, i=i, j=j, k=k, facecolor=colours, flatshading=True,
-                  lighting=dict(ambient=0.75, diffuse=0.5, specular=0.05), hoverinfo="skip"),
-        go.Scatter3d(x=ex, y=ey, z=ez, mode="lines", line=dict(color="#0b1130", width=2),
-                     hoverinfo="skip"),
-        go.Scatter3d(x=[p[0] for p in tops], y=[p[1] for p in tops], z=[p[2] + 0.6 for p in tops],
-                     customdata=[p[3] for p in tops], mode="markers",
-                     marker=dict(size=4, color=[ACCENT if p[3] == team else "#8b95ba" for p in tops],
-                                 opacity=0.9),
-                     text=[f"<b>{p[3]}</b><br>Matchday {p[1]}: {result.get(p[5], '')} (+{p[5]})"
-                           f"<br>{int(p[2])} pts · {p[4]}. in the table" for p in tops],
-                     hovertemplate="%{text}<extra></extra>"),
-    ])
+    # A plain dict instead of go.Figure: skips Plotly's validation (~100 ms), which matters
+    # because the animation rebuilds this figure every frame. 32-bit arrays halve the payload.
+    verts, tris = verts.astype(np.float32), tris.astype(np.int32)
+    data = [
+        dict(type="mesh3d", x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+             i=tris[:, 0], j=tris[:, 1], k=tris[:, 2],
+             intensity=kind.astype(np.uint8), intensitymode="cell", colorscale=scale, cmin=0,
+             cmax=n_k, showscale=False, flatshading=True, hoverinfo="skip",
+             lighting=dict(ambient=0.7, diffuse=0.55, specular=0.05)),
+        # Small dots on each tower top carry the hover text (Mesh3d hover is per vertex).
+        dict(type="scatter3d", x=[p[0] for p in tops], y=[p[1] for p in tops],
+             z=[p[2] + 0.5 for p in tops], customdata=[p[3] for p in tops], mode="markers",
+             marker=dict(size=4, color=[ACCENT if p[3] == team else "#8b95ba" for p in tops],
+                         opacity=0.9),
+             text=[f"<b>{p[3]}</b><br>Matchday {p[1]}: {result.get(p[5], '')} (+{p[5]})"
+                   f"<br>{int(p[2])} pts · {p[4]}. in the table" for p in tops],
+             hovertemplate="%{text}<extra></extra>"),
+    ]
     axis = dict(backgroundcolor=CARD_BG_HEX, gridcolor="#1f2a4d", zerolinecolor="#1f2a4d",
                 color="#8b95ba", showspikes=False)
-    fig.update_layout(
+    layout = dict(
         showlegend=False, paper_bgcolor=CARD_BG_HEX, height=600, autosize=True,
         margin=dict(l=0, r=0, t=10, b=0), uirevision="keep",   # keep the user's rotation
         font=dict(family="Outfit, Segoe UI, sans-serif", color="#8b95ba"),
@@ -455,7 +465,7 @@ def skyline(team, matchday):
             aspectmode="manual", aspectratio=dict(x=2.4, y=1.0, z=0.75),
             camera=dict(eye=dict(x=0.9, y=-1.9, z=0.95), center=dict(x=0, y=0, z=-0.15))),
     )
-    return fig
+    return dict(data=data, layout=layout)
 
 
 # --- Head-to-head ------------------------------------------------------------------------
