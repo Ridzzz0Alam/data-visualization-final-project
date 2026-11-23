@@ -69,7 +69,8 @@ TEAM_GROUPS = {
     f"In the {d.CURRENT_SEASON} Champions League": sorted(d.standings["team"]),
     "Other clubs since 2021-22": sorted(set(d.TEAMS) - set(d.standings["team"])),
 }
-team_w = pn.widgets.Select(name="", groups=TEAM_GROUPS, value="Arsenal", width=240,
+DEFAULT_TEAM = d.standings.iloc[0]["team"]          # starts on the current table leader
+team_w = pn.widgets.Select(name="", groups=TEAM_GROUPS, value=DEFAULT_TEAM, width=240,
                            stylesheets=[SEARCH_CSS])
 
 
@@ -295,7 +296,9 @@ odds_tab = pn.Column(
 
 # ================================ TAB 6: HEAD-TO-HEAD ==================================
 team_b_w = pn.widgets.Select(name="Compare with", groups=TEAM_GROUPS,
-                             value=d.simulation.iloc[0]["team"], width=260,
+                             # the model's favourite, or the next one if that is the leader
+                             value=d.simulation.loc[d.simulation["team"].ne(DEFAULT_TEAM),
+                                                    "team"].iloc[0], width=260,
                              stylesheets=[SEARCH_CSS])
 
 
