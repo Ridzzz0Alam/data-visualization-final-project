@@ -18,6 +18,7 @@ TEXT = "#e8ecff"
 MUTED = "#8b95ba"
 GRIDLINE = "#1f2a4d"
 ACCENT = "#22d3ee"      # focus team
+ACCENT_DIM = "#0e7490"  # focus team, older/background marks (3D skyline)
 GOLD = "#fbbf24"        # second team (head-to-head) / favourite
 GREY = "#46527a"        # other teams
 REF = "#7c86ad"         # reference lines
@@ -135,6 +136,15 @@ HTML_CSS = f"""
 .srow .bar {{ grid-column: 1 / 3; height: 4px; background: {GRIDLINE}; border-radius: 2px; margin-top: 3px; }}
 .srow .bar div {{ height: 4px; background: {REF}; border-radius: 2px; }}
 .scard.focus-team .srow .bar div {{ background: {ACCENT}; }}
+.story .step {{ color: {MUTED}; font-size: 12px; letter-spacing: .8px; display: flex;
+                justify-content: space-between; }}
+.story .tag {{ color: {ACCENT}; border: 1px solid {ACCENT}; border-radius: 4px; padding: 1px 6px;
+               font-size: 11px; }}
+.story h3 {{ font-size: 22px; margin: 10px 0 8px; }}
+.story p {{ font-size: 14.5px; line-height: 1.5; color: {TEXT}; opacity: .9; }}
+.story .notice {{ border: 1px solid {CARD_BORDER}; border-left: 3px solid {ACCENT}; border-radius: 6px;
+                  padding: 10px 12px; font-size: 13.5px; color: {TEXT}; opacity: .9; }}
+.story .notice b {{ color: {ACCENT}; font-size: 11px; letter-spacing: .8px; }}
 .footer {{ color: {MUTED}; font-size: 12.5px; text-align: center; padding: 8px; }}
 .footer a {{ color: {ACCENT}; }}
 """

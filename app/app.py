@@ -405,9 +405,47 @@ matches_tab = pn.Column(
               'no free source has player data for past seasons</span>'), scorers_tabulator),
 )
 
+# ================================ TAB: STORY (guided steps) ============================
+# Step 1 for now: the 3D season skyline. The Player reveals one matchday row at a time;
+# ONE Plotly pane is updated in place (uirevision keeps the user's rotation).
+story_player = pn.widgets.Player(name="Matchday", start=1, end=d.LATEST_MD, value=d.LATEST_MD,
+                                 interval=1300, loop_policy="once", show_loop_controls=False,
+                                 width=300, stylesheets=[PLAYER_CSS])
+skyline_pane = pn.pane.Plotly(c.skyline(team_w.value, story_player.value),
+                              config={"displaylogo": False, "responsive": True},
+                              height=600, sizing_mode="stretch_width")
+
+
+def _update_skyline(event=None) -> None:
+    skyline_pane.object = c.skyline(team_w.value, story_player.value)
+
+
+story_player.param.watch(_update_skyline, "value")
+team_w.param.watch(_update_skyline, "value")
+skyline_pane.param.watch(_click_3d, "click_data")      # click a tower top -> focus team
+
+_perfect = d.standings.loc[d.standings["points"].eq(3 * d.LATEST_MD), "team"].tolist()
+story_text = html(
+    f'<div class="story"><div class="step">STEP 1 / 6 <span class="tag">THE TABLE</span></div>'
+    f'<h3>Who\'s on top?</h3>'
+    '<p>Each block is <b>one point</b>. Every club in today\'s top 12 has a tower for each '
+    'matchday, so you can watch the season being built.</p>'
+    '<p>Brighter blocks are the points won <b>on that matchday</b>: three new blocks = a win, '
+    'one = a draw, none = a loss.</p>'
+    f'<div class="notice"><b>NOTICE</b><br>{" and ".join(_perfect) or "Nobody"} '
+    f'{"have" if len(_perfect) > 1 else "has"} won all {d.LATEST_MD} matches, the only '
+    f'perfect {3 * d.LATEST_MD}-block towers. Drag to rotate, hover a tower for the result, '
+    'click it to focus that team.</div></div>')
+story_tab = pn.Row(
+    card(pn.Row(html('<b>▶ Build the season</b> <span class="muted">matchday by matchday</span>',
+                     align="center", width=300), story_player), skyline_pane),
+    card(story_text, width=380),
+)
+
 # ================================ ASSEMBLE ==============================================
 tabs = pn.Tabs(
     ("Overview", pn.Column()),           # filled below: its buttons need `tabs` to exist
+    ("Story", story_tab),
     ("Contenders", contenders_tab), ("Early form", early_tab), ("Countries", countries_tab),
     ("Title odds", odds_tab), ("Head-to-head", h2h_tab), ("Matches", matches_tab),
     dynamic=True,                         # only the visible tab is rendered -> fast
@@ -430,9 +468,10 @@ tabs[0] = ("Overview", pn.Column(
         pn.Column(
             card(pn.panel(pn.bind(focus_card, team_w))),
             card(html('<b>Explore the questions</b>'),
-                 go_to(1, "Q1 · Who beats their rating? →"), go_to(2, "Q2 · Does early form matter? →"),
-                 go_to(3, "Q3 · Which leagues rule? →"), go_to(4, "Q4 · Who will win? →"),
-                 go_to(5, "Head-to-head →")),
+                 go_to(1, "▶ The season as a story →"),
+                 go_to(2, "Q1 · Who beats their rating? →"), go_to(3, "Q2 · Does early form matter? →"),
+                 go_to(4, "Q3 · Which leagues rule? →"), go_to(5, "Q4 · Who will win? →"),
+                 go_to(6, "Head-to-head →")),
             width=380),
     ),
 ))
