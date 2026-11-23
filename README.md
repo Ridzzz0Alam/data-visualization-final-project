@@ -12,8 +12,8 @@ interactive data visualization.
 
 | # | Question | View |
 |---|---|---|
-| Q1 | **Contenders** — which teams are strong this season, and who is over- or under-performing their underlying strength? | Scatter: Elo rating vs points, with an "expected from Elo" fit line |
-| Q2 | **Early form** — how well does the table position after matchday 4 predict a deep run? (2024-25, 2025-26: the 36-team format) | Bump chart of table position by matchday + strip plot of MD4 position vs furthest round |
+| Q1 | **Contenders** — which teams are strong this season, and who is over- or under-performing their underlying strength? | Scatter: Elo rating vs points, with an "expected from Elo" fit line + animated Elo race (top 12 after every match date since 2021) |
+| Q2 | **Early form** — how well does the table position after matchday 4 predict a deep run? (2024-25, 2025-26: the 36-team format) | Animated bump chart (replay the league phase matchday by matchday) + strip plot of MD4 position vs furthest round |
 | Q3 | **Strength by country** — which national leagues send the strongest clubs, and how has that changed? | Heatmap: country × season (points per match, Elo, win rate, clubs in R16) |
 | Q4 | **Title probability** — given current standings and Elo, what is each team's chance? | Horizontal probability bars from a 10,000-run Monte Carlo model (clearly labelled as a model) |
 
@@ -23,7 +23,7 @@ two clubs (stats, Elo history, match odds, past meetings) and a **Matches** expl
 **Design & interaction:** dark "UCL night" theme with one tab per topic. One searchable **focus team**
 (top bar) drives every view — clicking a table row or a dot in the Q1/Q2 charts makes that team the
 focus everywhere (**linked views**). Each tab has only its own controls (matchday range, countries,
-season, metric, stage), hover tooltips on every chart, zoom/pan, and a one-line takeaway computed from the data.
+season, metric, stage, play/pause animation players), hover tooltips on every chart, zoom/pan, and a one-line takeaway computed from the data.
 
 ## Data sources
 

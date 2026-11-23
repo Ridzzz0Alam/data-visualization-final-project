@@ -17,13 +17,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))   # so data/theme/charts import when served
 
+import holoviews as hv
 import pandas as pd
 import panel as pn
 
 import charts as c
 import data as d
 from theme import (ACCENT, BUTTON_CSS, CARD_BG, CARD_BORDER, CARD_CSS, GOLD, HTML_CSS, MUTED,
-                   PAGE_CSS, SEARCH_CSS, TABS_CSS, TEXT)
+                   PAGE_CSS, PLAYER_CSS, SEARCH_CSS, TABS_CSS, TEXT)
 
 pn.extension("tabulator", sizing_mode="stretch_width", raw_css=[PAGE_CSS])
 
@@ -154,6 +155,12 @@ q1_md_w = pn.widgets.IntRangeSlider(name="League matchdays", start=1, end=8,
                                     value=(1, d.LATEST_MD), step=1)
 q1_country_w = pn.widgets.MultiChoice(name="Countries (empty = all)", options=d.COUNTRIES)
 
+# Animation: Elo race over all 163 match dates (starts on the latest date = today's ratings).
+elo_player = pn.widgets.Player(name="Match date", start=0, end=len(d.ELO_DATES) - 1,
+                               value=len(d.ELO_DATES) - 1, interval=120, loop_policy="once",
+                               show_loop_controls=False, width=420, stylesheets=[PLAYER_CSS])
+elo_race = hv.DynamicMap(pn.bind(c.elo_race_frame, elo_player, team_w))
+
 contenders_tab = pn.Column(
     intro("Q1 · Which teams are genuinely strong, and who is over- or under-performing their rating?",
           f"<b>{d.Q1_OVER['team']}</b> has {d.Q1_OVER['vs_expected']:+.1f} points more than its Elo "
@@ -165,13 +172,21 @@ contenders_tab = pn.Column(
         card(pn.panel(pn.bind(c.q1_lollipop, team_w, q1_country_w, q1_md_w)),
              width=470),
     ),
+    card(elo_player, pn.pane.HoloViews(elo_race)),
+    html('<p class="muted">How did today\'s ratings come about? Press ▶ to replay every UCL '
+         'match date since September 2021 (or drag the slider). The focus team is highlighted.</p>'),
 )
 
 # ================================ TAB 3: EARLY FORM (Q2) ===============================
 q2_season_w = pn.widgets.RadioButtonGroup(name="Season", options=d.LEAGUE_SEASONS,
                                           value=d.CURRENT_SEASON, button_type="primary",
                                           button_style="outline", width=330)
-q2_md_w = pn.widgets.IntRangeSlider(name="Matchdays", start=1, end=8, value=(1, 8), step=1)
+# Animation: the Player steps through matchdays 1..8 by itself ("replay the season").
+# The chart is a DynamicMap, so each step updates the existing plot instead of redrawing it.
+q2_player = pn.widgets.Player(name="Matchday", start=1, end=8, value=8, interval=900,
+                              loop_policy="once", show_loop_controls=False, width=330,
+                              stylesheets=[PLAYER_CSS])
+q2_replay = hv.DynamicMap(pn.bind(c.q2_replay_frame, q2_season_w, team_w, q2_player))
 
 # The champion with the worst position after matchday 4 (the "never write them off" fact).
 _w = d.q2_outcomes[d.q2_outcomes["won_title"]].sort_values("position_md4").iloc[-1]
@@ -183,8 +198,9 @@ early_tab = pn.Column(
           f"{_r.loc['9–24', 'reached_r16']:.0%} and {_r.loc['9–24', 'reached_sf']:.0%}. "
           f"But <b>{_w['team']} were {int(_w['position_md4'])}th after matchday 4 in {_w['season']} "
           "— and won the title.</b>"),
-    pn.Row(q2_season_w, q2_md_w),
-    pn.Row(card(pn.panel(pn.bind(c.q2_bump, q2_season_w, team_w, q2_md_w))),
+    pn.Row(q2_season_w, html('<span class="muted">▶ replay the league phase matchday by '
+                             'matchday:</span>', align="center", width=280), q2_player),
+    pn.Row(card(pn.pane.HoloViews(q2_replay)),
            card(pn.panel(pn.bind(c.q2_strip, team_w, set_team)))),
     html('<p class="muted">Right chart: the two completed 36-team seasons (72 teams); '
          'click a dot to focus that team.</p>'),

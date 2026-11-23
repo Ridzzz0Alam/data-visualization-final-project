@@ -145,6 +145,16 @@ BUTTON_CSS = f"""
 .bk-btn:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
 """
 
+# Animation player (play/pause buttons + slider) in the dark palette.
+PLAYER_CSS = f"""
+:host {{ color: {MUTED}; font-family: {FONT}; }}
+.bk-input-group label, .pn-player-value {{ color: {MUTED}; }}
+button {{ background: #13204a !important; color: {TEXT} !important;
+          border: 1px solid {CARD_BORDER} !important; border-radius: 6px; }}
+button:hover {{ border-color: {ACCENT} !important; color: {ACCENT} !important; }}
+input[type=range] {{ accent-color: {ACCENT}; }}
+"""
+
 # Dark text input (the header's focus-team search box defaults to white-on-white).
 SEARCH_CSS = f"""
 input.bk-input {{ background: {CARD_BG}; color: {TEXT}; border: 1px solid {CARD_BORDER};

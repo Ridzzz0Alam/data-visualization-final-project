@@ -13,6 +13,7 @@ import panel as pn
 
 import data as d
 from theme import ACCENT, CHART_OPTS, GOLD, GREY, HEAT_CMAP, REF
+from theme import TEXT as TEXT_LIGHT
 
 
 def message(text: str) -> pn.pane.Markdown:
@@ -94,35 +95,6 @@ def q1_lollipop(team, countries, matchdays):
 
 
 # --- Q2 Early form --------------------------------------------------------------------
-def q2_bump(season, team, matchdays):
-    df = d.league_tables[d.league_tables["season"].eq(season)
-                         & d.league_tables["matchday"].between(*matchdays)]
-    if df.empty:
-        return message(f"No matchdays {matchdays[0]}–{matchdays[1]} played in {season} yet.")
-    others, focus = df[df["team"] != team], df[df["team"] == team]
-    tips = dict(hover_tooltips=[("Team", "@team"), ("Matchday", "@matchday"),
-                                ("Position", "@position"), ("Points", "@points")],
-                hover_cols=["team", "points"])
-    plot = others.hvplot.line(x="matchday", y="position", by="team", color=GREY, line_width=1.5,
-                              alpha=0.6, legend=False, responsive=True, **tips)
-    if not focus.empty:
-        plot = plot * focus.hvplot.line(x="matchday", y="position", color=ACCENT, line_width=5,
-                                        responsive=True, **tips)
-        plot = plot * focus.hvplot.scatter(x="matchday", y="position", color=ACCENT, size=90,
-                                           responsive=True, **tips)
-    cut = (hv.HLine(8.5) * hv.HLine(24.5)).opts(hv.opts.HLine(color=REF, line_dash="dashed"))
-    zones = hv.Labels({"matchday": [matchdays[0]] * 3, "position": [4.5, 16.5, 30.5],
-                       "text": ["  TOP 8 → R16", "  9–24 → PLAY-OFFS", "  25+ → OUT"]},
-                      ["matchday", "position"], "text").opts(text_font_size="8pt", text_color=REF,
-                                               text_align="left")
-    note = "" if not focus.empty else f" — {team} did not play"
-    return (plot * cut * zones).opts(
-        title=f"How did the table move? {season}{note}",
-        xlabel="League matchday", ylabel="Table position (1 = top)", invert_yaxis=True,
-        xticks=list(range(matchdays[0], matchdays[1] + 1)), yticks=[1, 8, 16, 24, 36],
-        ylim=(0, 37), height=440, show_legend=False, **CHART_OPTS)
-
-
 def q2_strip(team, on_select):
     df = d.q2_outcomes.copy()
     offset = {d.Q2_SEASONS[0]: -0.15, d.Q2_SEASONS[-1]: 0.15}
@@ -150,6 +122,88 @@ def q2_strip(team, on_select):
         yticks=list(enumerate(d.Q2_ROUNDS)), xticks=[1, 8, 16, 24, 36], xlim=(0, 37),
         ylim=(-0.6, len(d.Q2_ROUNDS) - 0.4), height=440, legend_position="top_right",
         **CHART_OPTS)
+
+
+def q2_replay_frame(season, team, matchday):
+    """One frame of the 'replay the season' bump chart: lines grow up to `matchday`.
+
+    Used inside a DynamicMap, so every frame must have the SAME layers (HoloViews then
+    updates the data in place instead of redrawing -> smooth animation). That is why the
+    focus layers are drawn even when empty, and the x-axis is fixed at matchdays 1-8.
+    """
+    df = d.league_tables[d.league_tables["season"].eq(season)]
+    md = min(matchday, int(df["matchday"].max()))          # current season: only 4 played
+    df = df[df["matchday"].le(md)]
+    others, focus = df[df["team"] != team], df[df["team"] == team]
+    heads = df[df["matchday"].eq(md)]
+    head_focus = heads[heads["team"].eq(team)]
+
+    kd = [hv.Dimension("matchday", label="League matchday"),
+          hv.Dimension("position", label="Table position")]
+    paths = hv.Path([{"matchday": g["matchday"].to_numpy(), "position": g["position"].to_numpy(),
+                      "team": t} for t, g in others.groupby("team")], kd, vdims=["team"]).opts(
+        color=GREY, line_width=1.5, alpha=0.55, tools=["hover"])
+    line = hv.Curve(focus, kd[0], [kd[1], "team", "points"]).opts(color=ACCENT, line_width=5)
+    tips = [("Team", "@team"), ("Position", "@position"), ("Points", "@points")]
+    dots = hv.Points(heads, kd, ["team", "points"]).opts(
+        color=GREY, size=7, tools=["hover"], hover_tooltips=tips)
+    dot = hv.Points(head_focus, kd, ["team", "points"]).opts(
+        color=ACCENT, size=16, line_color="white", line_width=2, tools=["hover"], hover_tooltips=tips)
+    name = hv.Labels(head_focus.assign(text=head_focus["team"] + "  " + head_focus["position"]
+                                       .astype(str) + "."), kd, "text").opts(
+        text_color=ACCENT, text_font_style="bold", text_font_size="10pt", text_align="left",
+        xoffset=0.18)
+    # kdims named explicitly: hv.Text defaults to 'x'/'y', and Panel links the axes of all
+    # charts sharing a dimension name (that squashed other charts).
+    stamp = hv.Text(9.4, 35.5, f"Matchday {md}", halign="right", valign="bottom",
+                    kdims=kd).opts(
+        color=REF, text_font_size="22pt", text_alpha=0.5)
+    cut = (hv.HLine(8.5) * hv.HLine(24.5)).opts(hv.opts.HLine(color=REF, line_dash="dashed"))
+    return (paths * line * dots * dot * name * stamp * cut).opts(
+        title=f"Replay the {season} league phase — table position after each matchday",
+        xlabel="League matchday", ylabel="Table position (1 = top)", invert_yaxis=True,
+        xlim=(0.7, 9.5), ylim=(0, 37), xticks=list(range(1, 9)), yticks=[1, 8, 16, 24, 36],
+        height=440, show_legend=False, **CHART_OPTS)
+
+
+ELO_RACE_N = 12
+
+
+def elo_race_frame(frame, team):
+    """One frame of the Elo race: the 12 highest-rated clubs after match date `frame`.
+
+    Bars are Segments on a numeric y-axis (rank 1..12) with the team name drawn as a label,
+    so the axis never changes between frames and the animation stays smooth.
+    """
+    row = d.ELO_WIDE.iloc[frame].dropna().sort_values(ascending=False)
+    top = row.head(ELO_RACE_N).rename("elo").rename_axis("team").reset_index()
+    top["rank"] = np.arange(1, len(top) + 1)
+    top = top.reindex(range(ELO_RACE_N))                    # early frames: <12 clubs -> pad
+    top["rank"] = np.arange(1, ELO_RACE_N + 1)
+    top["team"] = top["team"].fillna("")
+    top["elo"] = top["elo"].fillna(1400.0)
+    top["base"] = 1400.0
+    top["colour"] = np.where(top["team"].eq(team), ACCENT, GREY)
+    top["text"] = top["team"] + "  " + top["elo"].round(0).astype(int).astype(str)
+    top.loc[top["team"].eq(""), "text"] = ""
+
+    # Unique dimension names ('race_*'): the Q1 scatter on the same tab also has an 'elo'
+    # axis, and Panel would link the two charts' axes (same lesson as the 'y' dims).
+    top = top.rename(columns={"base": "race_base", "elo": "race_elo", "rank": "race_rank"})
+    kd = [hv.Dimension("race_elo", label="Elo rating"), hv.Dimension("race_rank", label="Rank")]
+    bars = hv.Segments(top, ["race_base", "race_rank", "race_elo", "race_rank"],
+                       ["team", "colour"]).opts(color="colour", line_width=18)
+    names = hv.Labels(top, kd, "text").opts(
+        text_color=TEXT_LIGHT, text_font_size="10pt", text_align="left", xoffset=4)
+    rank_now = int((row > row.get(team, -np.inf)).sum()) + 1 if team in row else None
+    note = f"{team}: #{rank_now}" if rank_now else f"{team}: not yet in the UCL"
+    stamp = hv.Text(1745, 12.4, f"{d.ELO_FRAME_LABEL[frame]}\n{note}",
+                    halign="right", valign="bottom", kdims=kd).opts(
+        color=REF, text_font_size="12pt")             # named kdims: see q2_replay_frame
+    return (bars * names * stamp).opts(
+        title="Elo race: the 12 strongest clubs after every UCL match date, 2021 → today",
+        xlabel="Elo rating", ylabel="Rank", invert_yaxis=True, xlim=(1400, 1750),
+        ylim=(0.3, 12.8), yticks=list(range(1, ELO_RACE_N + 1)), height=470, **CHART_OPTS)
 
 
 # --- Q3 Countries ----------------------------------------------------------------------

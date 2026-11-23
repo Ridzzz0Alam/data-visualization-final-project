@@ -135,6 +135,18 @@ def match_odds(team_a: str, team_b: str) -> tuple[float, float, float]:
     return p_a, 1 - p_a - p_b, p_b
 
 
+# --- Animations ----------------------------------------------------------------------------
+# Elo race: one frame per match date. Wide table (date x team) of each club's rating after
+# that date; ffill carries a rating forward between its matches. A club appears in the race
+# from its first UCL match on (NaN before that).
+ELO_WIDE = (elo_history.sort_values("date").groupby(["date", "team"])["elo_after"].last()
+            .unstack().ffill())
+ELO_DATES = ELO_WIDE.index
+_round_on = team_matches.groupby("date")[["season", "round"]].first()
+ELO_FRAME_LABEL = [f"{_round_on.loc[t, 'season']} · {_round_on.loc[t, 'round']} · {t:%d %b %Y}"
+                   for t in ELO_DATES]
+
+
 # --- Scorers: how much does each team rely on one player? -----------------------------
 # One row per 2026-27 team. The API list is the top 100 scorers, so a team whose best
 # scorer is not in it has no row in `scorers` -> its share stays NaN (shown as "–").
