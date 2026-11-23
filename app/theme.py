@@ -160,6 +160,13 @@ SEARCH_CSS = f"""
 input.bk-input {{ background: {CARD_BG}; color: {TEXT}; border: 1px solid {CARD_BORDER};
                   border-radius: 6px; font-family: {FONT}; font-size: 14px; }}
 input.bk-input:focus {{ border-color: {ACCENT}; }}
+/* !important: Panel's own select stylesheet otherwise wins (white text on white). */
+select.bk-input {{ background-color: {CARD_BG} !important; color: {TEXT} !important;
+                   border: 1px solid {CARD_BORDER}; border-radius: 6px; font-family: {FONT};
+                   font-size: 14px; cursor: pointer; }}
+select.bk-input:focus {{ border-color: {ACCENT}; }}
+select.bk-input option, select.bk-input optgroup {{ background: {CARD_BG}; color: {TEXT}; }}
+select.bk-input optgroup {{ color: {MUTED}; font-style: normal; }}
 .bk-menu {{ background: {CARD_BG}; color: {TEXT}; border: 1px solid {CARD_BORDER}; }}
 .bk-menu > .bk-active, .bk-menu > *:hover {{ background: #18244d; }}
 """

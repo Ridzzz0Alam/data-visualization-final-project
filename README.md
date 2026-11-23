@@ -20,7 +20,7 @@ interactive data visualization.
 Plus an **Overview** (headline numbers, live table, focus-team card), a **Head-to-head** comparison of any
 two clubs (stats, Elo history, match odds, past meetings) and a **Matches** explorer (all 897 matches).
 
-**Design & interaction:** dark "UCL night" theme with one tab per topic. One searchable **focus team**
+**Design & interaction:** dark "UCL night" theme with one tab per topic. One **focus team** dropdown (all 80 clubs, this season's 36 first)
 (top bar) drives every view — clicking a table row or a dot in the Q1/Q2 charts makes that team the
 focus everywhere (**linked views**). Each tab has only its own controls (matchday range, countries,
 season, metric, stage, play/pause animation players), hover tooltips on every chart, zoom/pan, and a one-line takeaway computed from the data.

@@ -60,11 +60,13 @@ def fmt_pct(x: float) -> str:
 
 
 # --- The focus team (drives every view) -----------------------------------------------
-team_w = pn.widgets.AutocompleteInput(
-    name="", placeholder="Search a team…", options=d.TEAMS, value="Arsenal",
-    case_sensitive=False, search_strategy="includes", restrict=True, min_characters=1,
-    width=240, stylesheets=[SEARCH_CSS],
-)
+# Dropdown of all 80 clubs, grouped: this season's 36 first, then the rest (2021-26 only).
+TEAM_GROUPS = {
+    f"In the {d.CURRENT_SEASON} Champions League": sorted(d.standings["team"]),
+    "Other clubs since 2021-22": sorted(set(d.TEAMS) - set(d.standings["team"])),
+}
+team_w = pn.widgets.Select(name="", groups=TEAM_GROUPS, value="Arsenal", width=240,
+                           stylesheets=[SEARCH_CSS])
 
 
 def set_team(name: str) -> None:
@@ -290,10 +292,9 @@ odds_tab = pn.Column(
 )
 
 # ================================ TAB 6: HEAD-TO-HEAD ==================================
-team_b_w = pn.widgets.AutocompleteInput(
-    name="Compare with", placeholder="Search a team…", options=d.TEAMS,
-    value=d.simulation.iloc[0]["team"], case_sensitive=False, search_strategy="includes",
-    restrict=True, min_characters=1, width=260, stylesheets=[SEARCH_CSS])
+team_b_w = pn.widgets.Select(name="Compare with", groups=TEAM_GROUPS,
+                             value=d.simulation.iloc[0]["team"], width=260,
+                             stylesheets=[SEARCH_CSS])
 
 
 def meetings(team_a: str, team_b: str) -> pd.DataFrame:
@@ -347,7 +348,7 @@ meetings_table = pn.widgets.Tabulator(
     layout="fit_data_stretch", height=220, stylesheets=[TABLE_CSS])
 
 h2h_tab = pn.Column(
-    html('<div class="hero"><p>Head-to-head · the left team is the focus team (search at the top); '
+    html('<div class="hero"><p>Head-to-head · the left team is the focus team (dropdown at the top); '
          'choose the team to compare with here.</p></div>'),
     team_b_w,
     pn.panel(pn.bind(odds_bar, team_w, team_b_w)),
